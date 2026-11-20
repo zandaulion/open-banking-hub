@@ -1,0 +1,262 @@
+# Default rules. Put your own in $BANKHUB_DATA_DIR/categories.yaml (same format):
+# its entries are checked first and extend these defaults.
+#
+# Patterns match case-insensitively against "counterparty name | description".
+# A plain pattern is a substring; prefix with "re:" for a regular expression.
+# Only merchants listed here are ever shown by name to agents and reports.
+# Bank transfers match on the counterparty name only, never the description.
+# card_only: the name is also a first name, so it never matches bank transfers.
+
+merchants:
+  # Groceries
+  - {name: Mega Image, category: groceries, patterns: ["mega image", "megaimage", "shop&go"]}
+  - {name: Lidl, category: groceries, patterns: ["lidl"]}
+  - {name: Kaufland, category: groceries, patterns: ["kaufland"]}
+  - {name: Carrefour, category: groceries, patterns: ["carrefour"]}
+  - {name: Auchan, category: groceries, patterns: ["auchan"]}
+  - {name: Profi, card_only: true, category: groceries, patterns: ["re:\\bprofi\\b"]}
+  - {name: Penny, card_only: true, category: groceries, patterns: ["re:\\bpenny\\b"]}
+  - {name: Selgros, category: groceries, patterns: ["selgros"]}
+  - {name: Metro, card_only: true, category: groceries, patterns: ["re:\\bmetro cash", "re:^metro\\b"]}
+  - {name: La Doi Pasi, category: groceries, patterns: ["la doi pasi"]}
+  - {name: Freshful, category: groceries, patterns: ["freshful"]}
+  - {name: Sezamo, category: groceries, patterns: ["sezamo"]}
+  - {name: Annabella, category: groceries, patterns: ["annabella"]}
+  - {name: Cora, card_only: true, category: groceries, patterns: ["re:\\bcora\\b"]}
+
+  # Food delivery, restaurants, cafes
+  - {name: Glovo, category: restaurants, subcategory: food_delivery, patterns: ["glovo"]}
+  - {name: Tazz, category: restaurants, subcategory: food_delivery, patterns: ["tazz"]}
+  - {name: Wolt, category: restaurants, subcategory: food_delivery, patterns: ["wolt"]}
+  - {name: Bolt Food, category: restaurants, subcategory: food_delivery, patterns: ["bolt food", "bolt.eu/f", "re:bolt\\*food"]}
+  - {name: Foodpanda, category: restaurants, subcategory: food_delivery, patterns: ["foodpanda"]}
+  - {name: McDonald's, category: restaurants, subcategory: fast_food, patterns: ["mcdonald"]}
+  - {name: KFC, category: restaurants, subcategory: fast_food, patterns: ["re:\\bkfc\\b"]}
+  - {name: Burger King, category: restaurants, subcategory: fast_food, patterns: ["burger king"]}
+  - {name: Subway, category: restaurants, subcategory: fast_food, patterns: ["re:\\bsubway\\b"]}
+  - {name: Starbucks, category: restaurants, subcategory: cafes, patterns: ["starbucks"]}
+  - {name: 5 to go, category: restaurants, subcategory: cafes, patterns: ["5 to go", "5togo"]}
+  - {name: Tucano Coffee, category: restaurants, subcategory: cafes, patterns: ["tucano"]}
+  - {name: Ted's Coffee, category: restaurants, subcategory: cafes, patterns: ["ted's coffee", "teds coffee"]}
+  - {name: Paul, card_only: true, category: restaurants, subcategory: cafes, patterns: ["re:^paul\\b"]}
+  - {name: Luca, card_only: true, category: restaurants, subcategory: bakery, patterns: ["re:\\bluca\\b"]}
+  - {name: Spartan, card_only: true, category: restaurants, subcategory: fast_food, patterns: ["spartan"]}
+
+  # Transport
+  - {name: Bolt, category: transport, subcategory: ride_hailing, patterns: ["re:\\bbolt\\b", "bolt.eu"]}
+  - {name: Uber, category: transport, subcategory: ride_hailing, patterns: ["re:\\buber\\b(?!\\s*eats)"]}
+  - {name: Uber Eats, category: restaurants, subcategory: food_delivery, patterns: ["uber eats", "ubereats"]}
+  - {name: Free Now, category: transport, subcategory: ride_hailing, patterns: ["free now", "freenow"]}
+  - {name: Petrom, category: transport, subcategory: fuel, patterns: ["petrom"]}
+  - {name: OMV, category: transport, subcategory: fuel, patterns: ["re:\\bomv\\b"]}
+  - {name: Rompetrol, category: transport, subcategory: fuel, patterns: ["rompetrol"]}
+  - {name: MOL, category: transport, subcategory: fuel, patterns: ["re:\\bmol\\b"]}
+  - {name: Lukoil, category: transport, subcategory: fuel, patterns: ["lukoil"]}
+  - {name: Socar, category: transport, subcategory: fuel, patterns: ["socar"]}
+  - {name: Metrorex, category: transport, subcategory: public_transport, patterns: ["metrorex"]}
+  - {name: STB, category: transport, subcategory: public_transport, patterns: ["re:\\bstb\\b", "24pay"]}
+  - {name: CFR Calatori, category: transport, subcategory: train, patterns: ["cfr calatori", "cfrcalatori"]}
+  - {name: TPark, category: transport, subcategory: parking, patterns: ["tpark"]}
+  - {name: Rovinieta, category: transport, subcategory: tolls, patterns: ["rovinieta", "erovinieta", "cnair"]}
+  - {name: Lime, card_only: true, category: transport, subcategory: scooters, patterns: ["re:\\blime\\b", "li.me"]}
+
+  # Shopping
+  - {name: eMAG, category: shopping, subcategory: online, patterns: ["emag"]}
+  - {name: Amazon, category: shopping, subcategory: online, patterns: ["amazon", "amzn", "kindle svcs"]}
+  - {name: Temu, category: shopping, subcategory: online, patterns: ["temu"]}
+  - {name: AliExpress, category: shopping, subcategory: online, patterns: ["aliexpress"]}
+  - {name: Shein, category: shopping, subcategory: clothing, patterns: ["shein"]}
+  - {name: Altex, category: shopping, subcategory: electronics, patterns: ["altex", "media galaxy"]}
+  - {name: Flanco, category: shopping, subcategory: electronics, patterns: ["flanco"]}
+  - {name: Dedeman, category: shopping, subcategory: home, patterns: ["dedeman"]}
+  - {name: IKEA, category: shopping, subcategory: home, patterns: ["ikea"]}
+  - {name: Leroy Merlin, category: shopping, subcategory: home, patterns: ["leroy merlin"]}
+  - {name: Hornbach, category: shopping, subcategory: home, patterns: ["hornbach"]}
+  - {name: Jysk, category: shopping, subcategory: home, patterns: ["jysk"]}
+  - {name: Pepco, category: shopping, subcategory: home, patterns: ["pepco"]}
+  - {name: Action, card_only: true, category: shopping, subcategory: home, patterns: ["re:^action\\b"]}
+  - {name: Decathlon, category: shopping, subcategory: sports, patterns: ["decathlon"]}
+  - {name: H&M, category: shopping, subcategory: clothing, patterns: ["h&m", "re:\\bhm\\b"]}
+  - {name: Zara, card_only: true, category: shopping, subcategory: clothing, patterns: ["re:\\bzara\\b"]}
+  - {name: Fashion Days, category: shopping, subcategory: clothing, patterns: ["fashion days", "fashiondays"]}
+  - {name: Answear, category: shopping, subcategory: clothing, patterns: ["answear"]}
+  - {name: Libris, category: shopping, subcategory: books, patterns: ["libris"]}
+  - {name: Carturesti, category: shopping, subcategory: books, patterns: ["carturesti"]}
+  - {name: Elefant, category: shopping, subcategory: online, patterns: ["elefant.ro"]}
+  - {name: OLX, category: shopping, subcategory: online, patterns: ["re:\\bolx\\b"]}
+  - {name: Vinted, category: shopping, subcategory: online, patterns: ["vinted"]}
+  - {name: Sameday, category: shopping, subcategory: delivery, patterns: ["sameday", "easybox"]}
+  - {name: Fan Courier, category: shopping, subcategory: delivery, patterns: ["fan courier", "fancourier"]}
+
+  # Health & personal care
+  - {name: Catena, category: health, subcategory: pharmacy, patterns: ["catena"]}
+  - {name: Dr. Max, category: health, subcategory: pharmacy, patterns: ["dr max", "dr.max", "drmax"]}
+  - {name: Help Net, category: health, subcategory: pharmacy, patterns: ["help net", "helpnet"]}
+  - {name: Sensiblu, category: health, subcategory: pharmacy, patterns: ["sensiblu"]}
+  - {name: Farmacia Tei, category: health, subcategory: pharmacy, patterns: ["farmacia tei", "farmaciatei"]}
+  - {name: Regina Maria, category: health, subcategory: clinic, patterns: ["regina maria"]}
+  - {name: MedLife, category: health, subcategory: clinic, patterns: ["medlife", "med life"]}
+  - {name: Sanador, category: health, subcategory: clinic, patterns: ["sanador"]}
+  - {name: Synevo, category: health, subcategory: lab, patterns: ["synevo"]}
+  - {name: dm, category: personal_care, patterns: ["re:\\bdm\\b", "dm drogerie"]}
+  - {name: Notino, category: personal_care, patterns: ["notino"]}
+  - {name: Douglas, card_only: true, category: personal_care, patterns: ["douglas"]}
+  - {name: Sephora, category: personal_care, patterns: ["sephora"]}
+
+  # Utilities & telecom
+  - {name: Digi, category: utilities, subcategory: internet_mobile, patterns: ["re:\\bdigi(\\b|_)", "rcs&rds", "rcs & rds"]}
+  - {name: Orange, category: utilities, subcategory: internet_mobile, patterns: ["re:\\borange\\b"]}
+  - {name: Vodafone, category: utilities, subcategory: internet_mobile, patterns: ["vodafone"]}
+  - {name: Telekom, category: utilities, subcategory: internet_mobile, patterns: ["telekom"]}
+  - {name: PPC Energie, category: utilities, subcategory: electricity, patterns: ["ppc energie", "re:\\bppc\\b"]}
+  - {name: Enel, category: utilities, subcategory: electricity, patterns: ["re:\\benel\\b"]}
+  - {name: Electrica, category: utilities, subcategory: electricity, patterns: ["electrica"]}
+  - {name: Hidroelectrica, category: utilities, subcategory: electricity, patterns: ["hidroelectrica"]}
+  - {name: Premier Energy, category: utilities, subcategory: electricity, patterns: ["premierenergy", "premier energy"]}
+  - {name: Engie, category: utilities, subcategory: gas, patterns: ["engie"]}
+  - {name: E.ON, category: utilities, subcategory: gas, patterns: ["re:\\be\\.?on\\b energie", "eon energie", "eon.ro"]}
+  - {name: Apa Nova, category: utilities, subcategory: water, patterns: ["apa nova", "apanova"]}
+  - {name: Termoenergetica, category: utilities, subcategory: heating, patterns: ["termoenergetica"]}
+
+  # Subscriptions & digital
+  - {name: Netflix, category: subscriptions, subcategory: streaming, patterns: ["netflix"]}
+  - {name: Spotify, category: subscriptions, subcategory: streaming, patterns: ["spotify"]}
+  - {name: YouTube, category: subscriptions, subcategory: streaming, patterns: ["youtube"]}
+  - {name: Disney+, category: subscriptions, subcategory: streaming, patterns: ["disney"]}
+  - {name: HBO Max, category: subscriptions, subcategory: streaming, patterns: ["hbo", "max.com"]}
+  - {name: Prime Video, category: subscriptions, subcategory: streaming, patterns: ["prime video", "primevideo"]}
+  - {name: SkyShowtime, category: subscriptions, subcategory: streaming, patterns: ["skyshowtime"]}
+  - {name: Voyo, category: subscriptions, subcategory: streaming, patterns: ["voyo"]}
+  - {name: Apple, category: subscriptions, subcategory: apps, patterns: ["apple.com", "itunes"]}
+  - {name: Google, category: subscriptions, subcategory: apps, patterns: ["google"]}
+  - {name: Microsoft, category: subscriptions, subcategory: software, patterns: ["microsoft", "xbox"]}
+  - {name: Adobe, category: subscriptions, subcategory: software, patterns: ["adobe"]}
+  - {name: Dropbox, category: subscriptions, subcategory: software, patterns: ["dropbox"]}
+  - {name: GitHub, category: subscriptions, subcategory: software, patterns: ["github"]}
+  - {name: OpenAI, category: subscriptions, subcategory: ai, patterns: ["openai", "chatgpt"]}
+  - {name: Anthropic, category: subscriptions, subcategory: ai, patterns: ["anthropic", "claude.ai"]}
+  - {name: Midjourney, category: subscriptions, subcategory: ai, patterns: ["midjourney"]}
+  - {name: ElevenLabs, category: subscriptions, subcategory: ai, patterns: ["elevenlabs"]}
+  - {name: Cursor, category: subscriptions, subcategory: ai, patterns: ["cursor.com", "cursor, ai"]}
+  - {name: RunPod, category: subscriptions, subcategory: cloud, patterns: ["runpod"]}
+  - {name: Oracle Cloud, category: subscriptions, subcategory: cloud, patterns: ["oracle"]}
+  - {name: Hetzner, category: subscriptions, subcategory: cloud, patterns: ["hetzner"]}
+  - {name: Cloudflare, category: subscriptions, subcategory: cloud, patterns: ["cloudflare"]}
+  - {name: Steam, category: entertainment, subcategory: games, patterns: ["steam", "valve"]}
+  - {name: PlayStation, category: entertainment, subcategory: games, patterns: ["playstation", "sony interactive"]}
+  - {name: Nintendo, category: entertainment, subcategory: games, patterns: ["nintendo"]}
+  - {name: Audible, category: subscriptions, subcategory: books, patterns: ["audible"]}
+  - {name: Duolingo, category: subscriptions, subcategory: education, patterns: ["duolingo"]}
+  - {name: Revolut plan, category: subscriptions, subcategory: banking, patterns: ["re:(premium|metal|plus|ultra) plan fee"]}
+
+  # Entertainment & travel
+  - {name: Cinema City, category: entertainment, subcategory: cinema, patterns: ["cinema city"]}
+  - {name: Happy Cinema, category: entertainment, subcategory: cinema, patterns: ["happy cinema"]}
+  - {name: Eventim, category: entertainment, subcategory: tickets, patterns: ["eventim"]}
+  - {name: iaBilet, category: entertainment, subcategory: tickets, patterns: ["iabilet"]}
+  - {name: Booking.com, category: travel, subcategory: accommodation, patterns: ["booking.com", "bkg*", "at booking.c", "cars on booking"]}
+  - {name: Airbnb, category: travel, subcategory: accommodation, patterns: ["airbnb"]}
+  - {name: Wizz Air, category: travel, subcategory: flights, patterns: ["wizz"]}
+  - {name: Ryanair, category: travel, subcategory: flights, patterns: ["ryanair"]}
+  - {name: TAROM, category: travel, subcategory: flights, patterns: ["tarom"]}
+  - {name: Blue Air, category: travel, subcategory: flights, patterns: ["blue air"]}
+  - {name: FlixBus, category: travel, subcategory: bus, patterns: ["flixbus"]}
+
+  # Government & taxes
+  - {name: Ghiseul.ro, category: taxes, patterns: ["ghiseul"]}
+  - {name: ANAF, category: taxes, patterns: ["re:\\banaf\\b"]}
+  - {name: Local taxes (DGITL), category: taxes, subcategory: local_taxes, patterns: ["directia generala impo", "impozitelocale", "dgitl"]}
+
+  # More chains and online services
+  - {name: Amparcat, category: transport, subcategory: parking, patterns: ["amparcat"]}
+  - {name: E-bloc, category: housing, subcategory: building_fees, patterns: ["e-bloc"]}
+  - {name: Kiwi.com, category: travel, subcategory: flights, patterns: ["kiwi.com"]}
+  - {name: GetYourGuide, category: travel, subcategory: activities, patterns: ["getyourguide"]}
+  - {name: National Express, category: travel, subcategory: bus, patterns: ["national express"]}
+  - {name: Viagogo, category: entertainment, subcategory: tickets, patterns: ["viagogo"]}
+  - {name: Fever, category: entertainment, subcategory: tickets, patterns: ["fever*", "feverup"]}
+  - {name: Sala Palatului, category: entertainment, subcategory: tickets, patterns: ["salapalatului"]}
+  - {name: Jerry's Pizza, category: restaurants, subcategory: food_delivery, patterns: ["jerryspizza", "jerry's pizza"]}
+  - {name: 1 Minute, category: restaurants, subcategory: cafes, patterns: ["re:^1 minute\\b"]}
+  - {name: Xiaomi, category: shopping, subcategory: electronics, patterns: ["mi.com", "xiaomi"]}
+  - {name: Vevor, category: shopping, subcategory: home, patterns: ["vevor"]}
+  - {name: Arabesque, category: shopping, subcategory: home, patterns: ["arabesque"]}
+  - {name: C&A, category: shopping, subcategory: clothing, patterns: ["c&a"]}
+  - {name: LC Waikiki, category: shopping, subcategory: clothing, patterns: ["lc waikiki"]}
+  - {name: CCC, category: shopping, subcategory: clothing, patterns: ["re:^ccc\\b"]}
+  - {name: Deichmann, category: shopping, subcategory: clothing, patterns: ["deichmann"]}
+  - {name: Foot Locker, category: shopping, subcategory: clothing, patterns: ["foot locker"]}
+  - {name: Thalia, category: shopping, subcategory: books, patterns: ["thalia buchhandlung"]}
+  - {name: Blackwell's, category: shopping, subcategory: books, patterns: ["blackwell's"]}
+  - {name: Monoprix, category: groceries, patterns: ["monoprix"]}
+  - {name: Rewe, category: groceries, patterns: ["rewe markt", "re:^rewe\\b"]}
+  - {name: Sainsbury's, category: groceries, patterns: ["sainsbury"]}
+  - {name: Medicover, category: health, subcategory: clinic, patterns: ["medicover"]}
+  - {name: RATP, category: transport, subcategory: public_transport, patterns: ["re:^ratp\\b"]}
+  - {name: BVG, category: transport, subcategory: public_transport, patterns: ["re:\\*bvg\\b", "re:^bvg\\b"]}
+  - {name: Donkey Republic, category: transport, subcategory: bikes, patterns: ["donkeyrepublic", "donkey republic"]}
+  - {name: Prezi, category: subscriptions, subcategory: software, patterns: ["prezi.com"]}
+
+# Keyword rules set a category WITHOUT naming the payee: for small local
+# businesses and practices named after people. Checked after merchants.
+category_rules:
+  - {category: health, subcategory: pharmacy, patterns: ["re:\\bfarm(acia)?\\b", "pharma", "apotheke"]}
+  - {category: health, subcategory: clinic, patterns: ["clinic", "medical", "re:\\bcmi\\b", "re:\\bdr\\.? ", "dent", "spital", "hospital", "ambulator", "laborator", "genetrix"]}
+  - {category: restaurants, patterns: ["restaurant", "ristorante", "bistro", "trattoria", "pizz", "kebab", "kebap", "shaorma", "burger", "sushi", "fish bar", "tapa", "comida", "china town", "cantina", "cartofi", "re:\\bpub\\b", "brasserie"]}
+  - {category: restaurants, subcategory: cafes, patterns: ["cafe", "coffee", "cofetari", "patiseri", "brutari", "bakery", "boulangerie"]}
+  - {category: groceries, patterns: ["supermarket", "market", "markt", "macelar", "alimentar"]}
+  - {category: travel, subcategory: accommodation, patterns: ["hotel", "hostel", "motel", "pensiun", "damage deposit"]}
+  - {category: travel, subcategory: agency, patterns: ["travel", "re:\\btours?\\b"]}
+  - {category: travel, subcategory: airport, patterns: ["aeroport", "airport"]}
+  - {category: transport, subcategory: parking, patterns: ["parking", "parcare"]}
+  - {category: transport, subcategory: fuel, patterns: ["oil&gas", "petrol", "benzin", "carburant"]}
+  - {category: taxes, patterns: ["impozit", "directia generala", "primaria", "municipiul", "imprimeria nationala", "re:^ukvi\\b"]}
+  - {category: entertainment, subcategory: tickets, patterns: ["ticket", "bilet", "event", "candlelight"]}
+  - {category: entertainment, subcategory: culture, patterns: ["muzeu", "museum", "teatr", "theatre", "re:\\bzoo\\b", "biblioteca"]}
+  - {category: sports, patterns: ["climb", "fitness", "re:\\bgym\\b", "swim", "re:\\bski\\b", "piscina"]}
+  - {category: education, patterns: ["language", "scoala", "school", "academ", "bartending"]}
+  - {category: shopping, subcategory: books, patterns: ["librari", "books", "buchhandlung"]}
+  - {category: shopping, subcategory: gifts, patterns: ["flowers", "florari", "souvenir"]}
+  - {category: charity, patterns: ["fundatia", "foundation", "asociatia"]}
+
+# The bank's own transaction type, where it carries the meaning (ING Romania sends one; Revolut does not).
+# Checked before merchants. internal: money between your own accounts or term deposits.
+bank_code_rules:
+  - {codes: ["Deposit creation", "Deposit closing", "Unauthorised negative balance set-off"], internal: true}
+  - {codes: ["Credit Repayment", "Recalculation to loan account"], direction: debit, category: loans, subcategory: repayment}
+  - {codes: ["Loan disbursement"], direction: credit, category: loans, subcategory: disbursement}
+  - {codes: ["Interest adjustment"], direction: debit, category: loans, subcategory: interest}
+  - {codes: ["Interest adjustment", "Deposit account interest"], direction: credit, category: income, subcategory: interest}
+  - {codes: ["Life insurance premium (credits)"], direction: debit, category: insurance, subcategory: loan_life}
+  - {codes: ["Service Fees", "Fee", "Fee for Movable Publicity Register", "Cancellation fee of NRMP registration"], direction: debit, category: fees}
+  - {codes: ["Cash withdrawal", "Cash withdrawal RON wallet ATM ING"], direction: debit, category: cash}
+  # BRD (the first part of its description)
+  - {codes: ["re:schimb valutar"], internal: true}
+  - {codes: ["Plata dobanda limita credit"], direction: debit, category: loans, subcategory: interest}
+  - {codes: ["Plata dobanda cont curent", "re:^plata dobanda"], direction: credit, category: income, subcategory: interest}
+  - {codes: ["Plata impozit"], direction: debit, category: taxes, subcategory: interest_tax}
+  - {codes: ["re:^retrageri? de numerar"], direction: debit, category: cash}
+  - {codes: ["re:^comision"], direction: debit, category: fees}
+
+# Descriptions meaning money moved between your own accounts at the same bank,
+# even when the other side is not visible (e.g. Revolut pockets and savings).
+own_account_patterns:
+  # Applied only when the other side has no account identifier (no IBAN or
+  # bank id), so a person called "Ron" paid by transfer never matches.
+  Revolut:
+    - "re:^(to|from) (ron|eur|usd|gbp|chf|huf|pln|czk|sek|nok|dkk|try|aed|jpy|cad|aud)\\b"
+    - "re:^exchanged to [a-z]{3}\\b"
+    - "re:^(to|from) savings account\\b"
+    - "re:^top-up by \\*\\d{4}"                # loading Revolut from your own card at another bank
+  Demo Card Bank:                                   # the made-up banks of `bankhub demo`
+    - "re:^top-up by \\*\\d{4}"
+    - "re:^to ron savings\\b"
+  BRD:
+    - "re:^revolut\\*\\*"                       # card payment loading your Revolut account
+
+# Generic labels for counterparties that are never named.
+labels:
+  cash_withdrawal: ["re:\\batm\\b", "cash withdrawal", "retragere numerar", "re:^cash at"]
+  bank_fee: ["re:\\bfee\\b", "comision", "re:\\btaxa\\b"]
+  refund: ["re:^refund"]
+  interest: ["re:^interest", "dobanda", "re:\\binterest earned"]

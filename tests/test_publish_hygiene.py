@@ -35,3 +35,14 @@ def test_no_personal_data_in_tracked_files():
                     continue
                 problems.append(f"{name}: {kind}")
     assert not problems, "\n".join(sorted(set(problems)))
+
+
+def test_every_source_file_is_tracked():
+    """A file that exists only on the developer's disk works locally and breaks every fresh clone."""
+    tracked = set(subprocess.run(["git", "ls-files", "src"], cwd=ROOT, capture_output=True, text=True,
+                                 check=True).stdout.splitlines())
+    on_disk = {str(p.relative_to(ROOT)) for p in (ROOT / "src").rglob("*")
+               if p.is_file() and "__pycache__" not in p.parts and not p.name.endswith(".egg-info")
+               and ".egg-info" not in str(p)}
+    missing = sorted(on_disk - tracked)
+    assert not missing, "not in git: " + ", ".join(missing)

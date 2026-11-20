@@ -6,7 +6,7 @@
 secrets/
 
 # Local banking data & exports (never commit)
-data/
+/data/
 *.db
 *.sqlite
 *.sqlite3

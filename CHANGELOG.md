@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 (2026-11-20)
 
 - Month: the swipe also starts on the category and payee rows (a tap still opens them; a drag doesn't).
 

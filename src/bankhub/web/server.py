@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -162,6 +163,7 @@ def create_app(cfg: WebConfig) -> FastAPI:
     connect(cfg.core.db_path).close()
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     _secure(app)
+    app.add_middleware(GZipMiddleware, minimum_size=800)
     auth = AuthStore(cfg.core.data_dir / "web.db")
     alerts = Alerts(cfg.core.data_dir / "web.db", cfg.core.data_dir)
     limiter = RedeemLimiter()

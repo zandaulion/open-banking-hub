@@ -17,6 +17,10 @@ self.addEventListener('activate', (event) => event.waitUntil((async () => {
   await announceUpdate();
 })()));
 
+// After one request times out, the network is treated as unreachable for a minute: later requests are
+// answered from the copy at once (and still tried in the background), instead of each waiting again.
+let slowUntil = 0;
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -27,14 +31,35 @@ self.addEventListener('fetch', (event) => {
   if (url.search || (!SHELL.includes(path || './') && request.mode !== 'navigate')) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    try {
-      const response = await fetch(request, { cache: 'no-cache' });
+    const saved = async () => {
+      const copy = await cache.match(request)
+        || (request.mode === 'navigate' ? (await cache.match('./')) || (await cache.match('index.html')) : null);
+      if (!copy || request.mode !== 'navigate') return copy;
+      // Tell the page it came from the copy, so it goes straight to the saved data instead of waiting again.
+      const html = (await copy.text()).replace('<head>', '<head><meta name="bankhub-from-copy" content="1">');
+      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    };
+    // Network first, so an online phone never runs old code; but a network that hangs (plane Wi-Fi, a
+    // captive portal, a VPN with no route) must not keep the app from opening: after 3 s use the copy.
+    const network = fetch(request, { cache: 'no-cache' }).then(async (response) => {
+      slowUntil = 0;
       if (response.ok && SHELL.includes(path || './')) await cache.put(request, response.clone());
       return response;
+    });
+    if (Date.now() < slowUntil) {
+      const copy = await saved();
+      if (copy) { network.catch(() => {}); return copy; }
+    }
+    const timeout = new Promise((resolve) => setTimeout(resolve, 2500, 'timeout'));
+    try {
+      const first = await Promise.race([network, timeout]);
+      if (first !== 'timeout') return first;
+      slowUntil = Date.now() + 60_000;
+      const copy = await saved();
+      if (copy) { network.catch(() => {}); return copy; }
+      return await network;
     } catch {
-      return await cache.match(request)
-        || (request.mode === 'navigate' ? await cache.match('./') : null)
-        || new Response('Offline', { status: 503 });
+      return (await saved()) || new Response('Offline', { status: 503 });
     }
   })());
 });

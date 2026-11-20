@@ -107,6 +107,8 @@ function showOffline(at) {
 }
 function showOnline() { state.offline = false; offlineBar.hidden = true; }
 
+// If the service worker had to serve this page from its copy, the network is not answering right now.
+let apiSlowUntil = document.querySelector('meta[name="bankhub-from-copy"]') ? Date.now() + 60_000 : 0;
 async function api(path, { method = 'GET', body } = {}) {
   if (method !== 'GET') monthCache.clear();
   const opts = { method, credentials: 'same-origin', headers: {} };
@@ -114,7 +116,19 @@ async function api(path, { method = 'GET', body } = {}) {
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   let r;
   try {
-    r = await fetch(`api/${path}`, opts);
+    // A hanging network (plane Wi-Fi, a VPN with no route) counts as offline after a few seconds.
+    if (method === 'GET') {
+      // After one timeout, give the network only a moment for the next minute (the copy is ready).
+      const wait = Date.now() < apiSlowUntil ? 800 : 4000;
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), wait);
+      try { r = await fetch(`api/${path}`, { ...opts, signal: abort.signal }); }
+      catch (e) { if (e.name === 'AbortError') apiSlowUntil = Date.now() + 60_000; throw e; }
+      finally { clearTimeout(timer); }
+      apiSlowUntil = 0;
+    } else {
+      r = await fetch(`api/${path}`, opts);
+    }
     if (method === 'GET' && [502, 503, 504].includes(r.status)) throw new TypeError('server unavailable');
   } catch (err) {
     if (method !== 'GET') throw new ApiError(0, "You're offline. Changes need the server; try again once you're connected.");
@@ -138,14 +152,16 @@ async function api(path, { method = 'GET', body } = {}) {
 // Sort, My rules and the latest ~600 payments.
 let filling = false;
 async function fillOfflineCopy(months) {
+  // About 0.4 MB, at most every six hours: fine on mobile data too, unless Data Saver is on.
   const conn = navigator.connection;
-  if (filling || !navigator.onLine || (conn && (conn.saveData || conn.type === 'cellular'))) return;
+  if (filling || state.offline || !navigator.onLine || (conn && conn.saveData)) return;
   const last = Number(localStorage.getItem('bankhub:offline-filled') || 0);
   if (Date.now() - last < 6 * 3600 * 1000) return;
   filling = true;
   try { await fillAll(months); } finally { filling = false; }
 }
 async function fillAll(months) {
+  if (!months) months = (await api(`overview?month=${thisMonth()}`)).trend.map((t) => t.month);
   const paths = [...months.map((m) => `overview?month=${m}`), 'recurring', 'accounts', 'alerts', 'inbox', 'rules',
                  ...Array.from({ length: 10 }, (_, i) => `transactions?${new URLSearchParams({ offset: i * 60, limit: 60 })}`)];
   for (const p of paths) {
@@ -346,7 +362,10 @@ async function route() {
     if (a.dataset.tab === (TAB_OF[name] || name)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
   try { await fn(params); tabbar.hidden = false; slideIn(); } catch (e) { fail(e); }
-  if (!state.usedOffline) showOnline();
+  if (!state.usedOffline) {
+    showOnline();
+    if (name !== 'month') setTimeout(() => fillOfflineCopy(null).catch(() => {}), 1000);
+  }
   if (mode === 'keep') scrollTo(0, y);
   else if (mode === 'top') scrollTo(0, 0);
   else {
@@ -497,7 +516,7 @@ async function renderMonth(params) {
   // Fetch the neighbours in the background, so a swipe never waits for the network.
   if (m > d.trend[0].month) monthData(shiftMonth(m, -1)).catch(() => {});
   if (!isCurrent) monthData(shiftMonth(m, 1)).catch(() => {});
-  if (!state.offline) setTimeout(() => fillOfflineCopy(d.trend.map((t) => t.month)).catch(() => {}), 3000);
+  if (!state.offline) setTimeout(() => fillOfflineCopy(d.trend.map((t) => t.month)).catch(() => {}), 1000);
   const compareTo = d.to_date ? d.to_date.previous_spent_ron : d.previous.spent_ron;
   const compareText = d.to_date ? `vs the same ${d.to_date.day} days of ${monthLabel(d.previous.month)}` : `vs ${monthLabel(d.previous.month)}`;
   const hasIncome = d.has_regular_income;

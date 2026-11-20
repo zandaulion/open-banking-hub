@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Offline fixes (found on a plane):
+  - the offline copy is filled on mobile data too (it was Wi-Fi only, so usually only the screen you
+    had open was saved), starting from any screen; about 0.4 MB, at most every six hours;
+  - a network that hangs instead of failing (plane Wi-Fi, a VPN with no route) no longer keeps the app
+    from opening: the app files fall back to the copy after 2.5 s, data after 4 s, and once that
+    happens everything comes from the copy straight away for a minute; a cold start takes ~3 s;
+  - API answers are gzip-compressed (a page of payments: 24 KB → 2 KB).
+
 ## 0.3.1 (2026-11-20)
 
 - Month: the swipe also starts on the category and payee rows (a tap still opens them; a drag doesn't).

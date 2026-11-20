@@ -1,0 +1,10 @@
+# Copy to ~/.config/systemd/user/ and replace /path/to/personal-bank-hub.
+[Unit]
+Description=Bank Hub local snapshot (validated SQLite copies, rules, settings)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/personal-bank-hub
+ExecStart=/path/to/personal-bank-hub/.venv/bin/bankhub backup
+UMask=0077
+NoNewPrivileges=true

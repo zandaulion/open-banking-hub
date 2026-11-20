@@ -1,0 +1,14 @@
+# Copy to ~/.config/systemd/user/ and replace /path/to/personal-bank-hub and the env file path.
+[Unit]
+Description=Bank Hub encrypted off-site copy (restic over SFTP)
+Wants=network-online.target
+After=network-online.target bankhub-backup.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/path/to/bankhub-config/offsite.env
+ExecStart=/path/to/personal-bank-hub/deploy/offsite-backup.sh backup
+UMask=0077
+NoNewPrivileges=true
+Restart=on-failure
+RestartSec=1h

@@ -1,0 +1,10 @@
+[Unit]
+Description=Bank Hub local snapshot, nightly
+
+[Timer]
+OnCalendar=*-*-* 03:23:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,9 @@
+[Unit]
+Description=Bank Hub off-site backup maintenance, weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 04:37:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

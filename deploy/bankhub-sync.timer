@@ -1,0 +1,12 @@
+# Twice a day leaves headroom under the PSD2 limit of ~4 unattended requests per account per day.
+[Unit]
+Description=Personal Bank Hub sync, twice a day
+
+[Timer]
+OnCalendar=*-*-* 06:47:00
+OnCalendar=*-*-* 18:47:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

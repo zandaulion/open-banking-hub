@@ -1,0 +1,10 @@
+[Unit]
+Description=Bank Hub encrypted off-site copy, nightly after the local snapshot
+
+[Timer]
+OnCalendar=*-*-* 03:53:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

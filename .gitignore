@@ -1,0 +1,31 @@
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Local banking data & exports (never commit)
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+*.csv
+*.xlsx
+*.pdf
+
+# Python / Node artifacts
+__pycache__/
+.venv/
+venv/
+node_modules/
+.DS_Store
+
+# Local tooling
+.pytest_cache/
+
+# Private deployment copies never belong here
+private-deploy/
+*.env
+!.env.example

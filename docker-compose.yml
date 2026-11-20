@@ -1,0 +1,32 @@
+# Bank Hub with Docker Compose.
+#   docker compose run --rm app bankhub init          # key + settings in the data volume
+#   docker compose run --rm app bankhub init --app-id <id> --base-url https://<private address>
+#   docker compose up -d
+#   docker compose exec app bankhub invite --label phone
+# The app is published on 127.0.0.1 only: put it behind a private reverse proxy (see docs/DEPLOY.md).
+services:
+  app:
+    build: .
+    image: bank-hub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8041:8041"
+    volumes:
+      - bankhub-data:/data
+
+  # Twice-daily bank sync and a nightly snapshot, without a host timer.
+  scheduler:
+    image: bank-hub
+    restart: unless-stopped
+    depends_on: [app]
+    volumes:
+      - bankhub-data:/data
+    command: >
+      sh -c 'while true; do
+               bankhub sync || true;
+               bankhub backup >/dev/null || true;
+               sleep 43200;
+             done'
+
+volumes:
+  bankhub-data:

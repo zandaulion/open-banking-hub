@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d4f91">
+  <meta name="referrer" content="no-referrer">
+  <title>Bank Hub</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="title">Bank Hub</h1>
+    <div class="topbar-actions" id="topbar-actions"></div>
+  </header>
+
+  <main id="view" aria-live="polite">
+    <p class="muted center-text">Loading…</p>
+  </main>
+
+  <nav class="tabbar" id="tabbar" hidden>
+    <a href="#month" data-tab="month"><span class="ico" aria-hidden="true">▤</span>Month</a>
+    <a href="#recurring" data-tab="recurring"><span class="ico" aria-hidden="true">↻</span>Recurring</a>
+    <a href="#tx" data-tab="tx"><span class="ico" aria-hidden="true">≡</span>Activity</a>
+    <a href="#inbox" data-tab="inbox"><span class="ico" aria-hidden="true">✎</span>Sort</a>
+    <a href="#accounts" data-tab="accounts"><span class="ico" aria-hidden="true">◉</span>Accounts</a>
+  </nav>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+  <dialog id="sheet" class="sheet"></dialog>
+</body>
+</html>

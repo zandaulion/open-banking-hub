@@ -1,0 +1,12 @@
+# Copy to ~/.config/systemd/user/ and replace the paths.
+[Unit]
+Description=Bank Hub off-site backup: thin out old snapshots and verify part of the repository
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/path/to/bankhub-config/offsite.env
+ExecStart=/path/to/personal-bank-hub/deploy/offsite-backup.sh maintain
+UMask=0077
+NoNewPrivileges=true

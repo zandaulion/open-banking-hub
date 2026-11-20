@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-- Month: swipe left or right to move to the next or previous month (swipes on the chart still scroll
-  the chart; swipes from the screen edges are left to the system's back gesture).
+- Month: swipe to the next or previous month. The page follows the finger, is thrown past a third of
+  the screen or on a quick flick, springs back otherwise, and stretches only a little at the first or
+  current month; a short vibration marks the point of no return. Neighbouring months are fetched in
+  advance, so the new month appears at once. Swipes on the chart still scroll the chart; swipes from
+  the screen edges are left to the system's back gesture.
 
 ## 0.2.0 (2026-11-20)
 

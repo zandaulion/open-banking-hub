@@ -51,7 +51,21 @@ function deltaSpan(pct, { invert = false } = {}) {
 }
 
 class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+// Month overviews, kept briefly so a swipe shows the next month at once. Any change made through the
+// app (a rule, a category, a sync) clears it.
+const monthCache = new Map();
+const MONTH_TTL = 60_000;
+function monthData(m) {
+  const hit = monthCache.get(m);
+  if (hit && Date.now() - hit.at < MONTH_TTL) return hit.promise;
+  const promise = api(`overview?month=${m}`);
+  monthCache.set(m, { at: Date.now(), promise });
+  promise.catch(() => monthCache.delete(m));
+  return promise;
+}
+
 async function api(path, { method = 'GET', body } = {}) {
+  if (method !== 'GET') monthCache.clear();
   const opts = { method, credentials: 'same-origin', headers: {} };
   if (method !== 'GET') { opts.headers['X-Bankhub'] = '1'; }
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
@@ -224,7 +238,7 @@ function go(name, params, { replace = false } = {}) {
     location.hash = hash.slice(1);
   }
 }
-function refresh() { navMode = 'keep'; return route(); }
+function refresh() { navMode = 'keep'; monthCache.clear(); return route(); }
 function setTitle(t, ...actions) { titleEl.textContent = t; actionsEl.replaceChildren(...actions); }
 function fail(err) {
   if (err.status === 401) return renderActivate();
@@ -269,38 +283,84 @@ addEventListener('hashchange', (e) => {
 });
 addEventListener('scroll', () => { if (!routing) scrollPos[currentKey()] = scrollY; }, { passive: true });
 
-// Month: swipe left for the next month, right for the previous one. Swipes that start on the chart
-// scroll the chart; swipes from the screen edges are left to the system's back gesture.
-let swipe = null;
+// Month: the page follows your finger. Past a third of the screen (or a quick flick) it is thrown off
+// and the next or previous month slides in; otherwise it springs back. At the first or current month
+// it only stretches a little. Swipes on the chart scroll the chart; swipes from the screen edges are
+// left to the system back gesture; mostly vertical moves stay scrolls.
+let drag = null;
+const THROW = () => innerWidth * 0.3;
+function dragTarget(dx) {
+  const b = state.monthBounds;
+  if (!b) return null;
+  const t = shiftMonth(b.shown, dx < 0 ? 1 : -1);
+  return t < b.first || t > b.last ? null : t;
+}
 view.addEventListener('touchstart', (e) => {
-  if (parseHash().name !== 'month' || e.touches.length !== 1 || document.getElementById('sheet').open) { swipe = null; return; }
+  drag = null;
+  if (parseHash().name !== 'month' || e.touches.length !== 1 || document.getElementById('sheet').open) return;
   const t = e.touches[0];
-  const edge = 28;
-  if (t.clientX < edge || t.clientX > innerWidth - edge || e.target.closest('.scroller, input, select, textarea')) { swipe = null; return; }
-  swipe = { x: t.clientX, y: t.clientY, at: Date.now() };
+  if (t.clientX < 28 || t.clientX > innerWidth - 28 || e.target.closest('.scroller, input, select, textarea, button')) return;
+  drag = { x: t.clientX, y: t.clientY, at: Date.now(), mode: null, dx: 0, buzzed: false };
 }, { passive: true });
-view.addEventListener('touchend', (e) => {
-  if (!swipe || !state.monthBounds) return;
-  const t = e.changedTouches[0];
-  const dx = t.clientX - swipe.x, dy = t.clientY - swipe.y, quick = Date.now() - swipe.at < 700;
-  swipe = null;
-  if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < 1.6 * Math.abs(dy)) return;
-  const { first, last, shown } = state.monthBounds;
-  const target = shiftMonth(shown, dx < 0 ? 1 : -1);
-  if (target < first || target > last) {
-    view.animate?.([{ transform: 'translateX(0)' }, { transform: `translateX(${dx < 0 ? -14 : 14}px)` }, { transform: 'translateX(0)' }],
-      { duration: 220, easing: 'ease-out' });
+view.addEventListener('touchmove', (e) => {
+  if (!drag) return;
+  const t = e.touches[0];
+  const dx = t.clientX - drag.x, dy = t.clientY - drag.y;
+  if (!drag.mode) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    drag.mode = Math.abs(dx) > 1.2 * Math.abs(dy) ? 'h' : 'v';
+    if (drag.mode === 'h') { view.getAnimations?.().forEach((a) => a.cancel()); hideTip(); }
+  }
+  if (drag.mode !== 'h') return;
+  const target = dragTarget(dx);
+  // Nowhere to go: a short rubber band instead of a free drag.
+  const moved = target ? dx : Math.sign(dx) * Math.min(Math.abs(dx) * 0.25, 40);
+  drag.dx = dx;
+  view.style.transform = `translateX(${moved}px)`;
+  view.style.opacity = String(1 - Math.min(Math.abs(moved) / innerWidth, 1) * 0.35);
+  if (target && !drag.buzzed && Math.abs(dx) > THROW()) { drag.buzzed = true; navigator.vibrate?.(8); }
+  if (target && drag.buzzed && Math.abs(dx) < THROW()) drag.buzzed = false;
+}, { passive: true });
+view.addEventListener('touchend', () => {
+  if (!drag || drag.mode !== 'h') { drag = null; return; }
+  const { dx, at, buzzed } = drag;
+  drag = null;
+  const target = dragTarget(dx);
+  const fast = Math.abs(dx) > 40 && Math.abs(dx) / Math.max(1, Date.now() - at) > 0.6;
+  const from = view.style.transform || 'translateX(0)';
+  const reset = () => { view.style.transform = ''; view.style.opacity = ''; };
+  if (!target || (Math.abs(dx) < THROW() && !fast)) {
+    if (!view.animate) return reset();
+    view.animate([{ transform: from, opacity: view.style.opacity || 1 }, { transform: 'translateX(0)', opacity: 1 }],
+      { duration: 220, easing: 'cubic-bezier(.2,.9,.3,1.2)' }).finished.finally(reset);
     return;
   }
-  state.slideFrom = dx < 0 ? 'right' : 'left';
-  go('month', { m: target }, { replace: true });
+  if (!buzzed) navigator.vibrate?.(8);
+  const out = dx < 0 ? -innerWidth : innerWidth;
+  const go_ = () => { reset(); state.slideFrom = dx < 0 ? 'right' : 'left'; state.slideFar = true; go('month', { m: target }, { replace: true }); };
+  if (!view.animate) return go_();
+  view.animate([{ transform: from }, { transform: `translateX(${out}px)`, opacity: 0.2 }],
+    { duration: 140, easing: 'ease-in', fill: 'forwards' }).finished.then(() => {
+      view.getAnimations().forEach((a) => a.cancel());
+      view.style.transform = `translateX(${out}px)`;
+      go_();
+    });
 }, { passive: true });
+view.addEventListener('touchcancel', () => {
+  if (drag && drag.mode === 'h') { view.style.transform = ''; view.style.opacity = ''; }
+  drag = null;
+});
 function slideIn() {
-  const from = state.slideFrom;
+  const from = state.slideFrom, far = state.slideFar;
   state.slideFrom = null;
+  state.slideFar = false;
+  view.style.transform = '';
+  view.style.opacity = '';
   if (!from || matchMedia('(prefers-reduced-motion: reduce)').matches || !view.animate) return;
-  view.animate([{ transform: `translateX(${from === 'right' ? 36 : -36}px)`, opacity: 0.35 }, { transform: 'translateX(0)', opacity: 1 }],
-    { duration: 200, easing: 'ease-out' });
+  const distance = far ? innerWidth : 36;
+  view.animate([{ transform: `translateX(${from === 'right' ? distance : -distance}px)`, opacity: far ? 0.2 : 0.35 },
+                { transform: 'translateX(0)', opacity: 1 }],
+    { duration: far ? 220 : 200, easing: 'cubic-bezier(.2,.8,.2,1)' });
 }
 tabbar.addEventListener('click', () => { navMode = 'top'; });
 document.addEventListener('click', hideTip);
@@ -339,9 +399,12 @@ async function renderMonth(params) {
   if (params.get('m')) state.month = params.get('m');
   const m = state.month;
   setTitle('Month');
-  const d = await api(`overview?month=${m}`);
+  const d = await monthData(m);
   const isCurrent = m === thisMonth();
   state.monthBounds = { first: d.trend[0].month, last: thisMonth(), shown: m };
+  // Fetch the neighbours in the background, so a swipe never waits for the network.
+  if (m > d.trend[0].month) monthData(shiftMonth(m, -1)).catch(() => {});
+  if (!isCurrent) monthData(shiftMonth(m, 1)).catch(() => {});
   const compareTo = d.to_date ? d.to_date.previous_spent_ron : d.previous.spent_ron;
   const compareText = d.to_date ? `vs the same ${d.to_date.day} days of ${monthLabel(d.previous.month)}` : `vs ${monthLabel(d.previous.month)}`;
   const hasIncome = d.has_regular_income;

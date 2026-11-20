@@ -189,3 +189,7 @@ table.data td, table.data th { padding: 5px 4px; border-top: 1px solid var(--lin
 table.data th:first-child, table.data td:first-child { text-align: left; }
 
 @media (prefers-reduced-motion: no-preference) { .meter > span { transition: width .3s ease; } }
+
+/* The Month page is dragged sideways by hand; vertical scrolling stays with the browser. */
+main#view { touch-action: pan-y; will-change: transform; }
+.scroller { touch-action: pan-x pan-y; }

@@ -382,7 +382,8 @@ view.addEventListener('touchstart', (e) => {
   drag = null;
   if (parseHash().name !== 'month' || e.touches.length !== 1 || document.getElementById('sheet').open) return;
   const t = e.touches[0];
-  if (t.clientX < 28 || t.clientX > innerWidth - 28 || e.target.closest('.scroller, input, select, textarea, button')) return;
+  // Rows and cards are fine to start from (a tap still opens them); form fields and the chart are not.
+  if (t.clientX < 28 || t.clientX > innerWidth - 28 || e.target.closest('.scroller, input, select, textarea, .month-nav')) return;
   drag = { x: t.clientX, y: t.clientY, at: Date.now(), mode: null, dx: 0, buzzed: false };
 }, { passive: true });
 view.addEventListener('touchmove', (e) => {
@@ -404,8 +405,15 @@ view.addEventListener('touchmove', (e) => {
   if (target && !drag.buzzed && Math.abs(dx) > THROW()) { drag.buzzed = true; navigator.vibrate?.(8); }
   if (target && drag.buzzed && Math.abs(dx) < THROW()) drag.buzzed = false;
 }, { passive: true });
+// A sideways drag that started on a row must not also open that row.
+let swallowClick = false;
+view.addEventListener('click', (e) => {
+  if (swallowClick) { swallowClick = false; e.preventDefault(); e.stopPropagation(); }
+}, true);
 view.addEventListener('touchend', () => {
   if (!drag || drag.mode !== 'h') { drag = null; return; }
+  swallowClick = true;
+  setTimeout(() => { swallowClick = false; }, 400);
   const { dx, at, buzzed } = drag;
   drag = null;
   const target = dragTarget(dx);

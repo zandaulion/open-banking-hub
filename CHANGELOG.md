@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Month: the swipe also starts on the category and payee rows (a tap still opens them; a drag doesn't).
+
 ## 0.3.0 (2026-11-20)
 
 - Offline: the app keeps a copy of every screen on the phone, saves all months, Recurring, Accounts and

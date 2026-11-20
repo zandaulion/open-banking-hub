@@ -250,7 +250,7 @@ async function route() {
   for (const a of tabbar.querySelectorAll('a')) {
     if (a.dataset.tab === (TAB_OF[name] || name)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
-  try { await fn(params); tabbar.hidden = false; } catch (e) { fail(e); }
+  try { await fn(params); tabbar.hidden = false; slideIn(); } catch (e) { fail(e); }
   if (mode === 'keep') scrollTo(0, y);
   else if (mode === 'top') scrollTo(0, 0);
   else {
@@ -268,6 +268,40 @@ addEventListener('hashchange', (e) => {
   route();
 });
 addEventListener('scroll', () => { if (!routing) scrollPos[currentKey()] = scrollY; }, { passive: true });
+
+// Month: swipe left for the next month, right for the previous one. Swipes that start on the chart
+// scroll the chart; swipes from the screen edges are left to the system's back gesture.
+let swipe = null;
+view.addEventListener('touchstart', (e) => {
+  if (parseHash().name !== 'month' || e.touches.length !== 1 || document.getElementById('sheet').open) { swipe = null; return; }
+  const t = e.touches[0];
+  const edge = 28;
+  if (t.clientX < edge || t.clientX > innerWidth - edge || e.target.closest('.scroller, input, select, textarea')) { swipe = null; return; }
+  swipe = { x: t.clientX, y: t.clientY, at: Date.now() };
+}, { passive: true });
+view.addEventListener('touchend', (e) => {
+  if (!swipe || !state.monthBounds) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipe.x, dy = t.clientY - swipe.y, quick = Date.now() - swipe.at < 700;
+  swipe = null;
+  if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < 1.6 * Math.abs(dy)) return;
+  const { first, last, shown } = state.monthBounds;
+  const target = shiftMonth(shown, dx < 0 ? 1 : -1);
+  if (target < first || target > last) {
+    view.animate?.([{ transform: 'translateX(0)' }, { transform: `translateX(${dx < 0 ? -14 : 14}px)` }, { transform: 'translateX(0)' }],
+      { duration: 220, easing: 'ease-out' });
+    return;
+  }
+  state.slideFrom = dx < 0 ? 'right' : 'left';
+  go('month', { m: target }, { replace: true });
+}, { passive: true });
+function slideIn() {
+  const from = state.slideFrom;
+  state.slideFrom = null;
+  if (!from || matchMedia('(prefers-reduced-motion: reduce)').matches || !view.animate) return;
+  view.animate([{ transform: `translateX(${from === 'right' ? 36 : -36}px)`, opacity: 0.35 }, { transform: 'translateX(0)', opacity: 1 }],
+    { duration: 200, easing: 'ease-out' });
+}
 tabbar.addEventListener('click', () => { navMode = 'top'; });
 document.addEventListener('click', hideTip);
 
@@ -307,14 +341,15 @@ async function renderMonth(params) {
   setTitle('Month');
   const d = await api(`overview?month=${m}`);
   const isCurrent = m === thisMonth();
+  state.monthBounds = { first: d.trend[0].month, last: thisMonth(), shown: m };
   const compareTo = d.to_date ? d.to_date.previous_spent_ron : d.previous.spent_ron;
   const compareText = d.to_date ? `vs the same ${d.to_date.day} days of ${monthLabel(d.previous.month)}` : `vs ${monthLabel(d.previous.month)}`;
   const hasIncome = d.has_regular_income;
 
   const nav = h('div', { class: 'month-nav' },
-    h('button', { class: 'chip icon', 'aria-label': 'Previous month', disabled: m <= d.trend[0].month, onclick: () => go('month', { m: shiftMonth(m, -1) }, { replace: true }) }, '‹'),
+    h('button', { class: 'chip icon', 'aria-label': 'Previous month', disabled: m <= d.trend[0].month, onclick: () => { state.slideFrom = 'left'; go('month', { m: shiftMonth(m, -1) }, { replace: true }); } }, '‹'),
     h('strong', {}, monthLabel(m) + (isCurrent ? ' · so far' : '')),
-    h('button', { class: 'chip icon', 'aria-label': 'Next month', disabled: isCurrent, onclick: () => go('month', { m: shiftMonth(m, 1) }, { replace: true }) }, '›'));
+    h('button', { class: 'chip icon', 'aria-label': 'Next month', disabled: isCurrent, onclick: () => { state.slideFrom = 'right'; go('month', { m: shiftMonth(m, 1) }, { replace: true }); } }, '›'));
 
   const over = d.left_ron < 0;
   const hero = h('section', { class: 'card' },
@@ -368,7 +403,7 @@ async function renderMonth(params) {
             if (inc > 0) svg.append(s('line', { x1: g.x - 1, x2: g.x + g.bw + 1, y1: g.base - inc, y2: g.base - inc, class: 'income-line' }));
           }
         } }),
-    h('p', { class: 'chart-note' }, 'Tap a month to open it · scroll for older months · dashed: incomplete month'),
+    h('p', { class: 'chart-note' }, 'Tap a month to open it, or swipe the page left and right · scroll the chart for older months · dashed: incomplete month'),
     tableToggle(d.trend.map((t) => [monthLabel(t.month) + (t.partial ? ' (incomplete)' : ''), nf0.format(t.income_ron), nf0.format(t.outflow_ron),
       nf0.format(t.income_ron - t.outflow_ron), t.one_off_out_ron || t.one_off_in_ron ? nf0.format(t.one_off_in_ron - t.one_off_out_ron) : '—']),
       ['Month', 'Income', 'Spent', 'Left', 'One-off']));

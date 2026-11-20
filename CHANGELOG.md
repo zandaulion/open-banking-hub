@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Month: swipe left or right to move to the next or previous month (swipes on the chart still scroll
+  the chart; swipes from the screen edges are left to the system's back gesture).
+
 ## 0.2.0 (2026-11-20)
 
 - **Notifications on your phone** (Web Push): a large payment, a low balance, late regular income, a

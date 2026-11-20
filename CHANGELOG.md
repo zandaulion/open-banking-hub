@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Offline: the app keeps a copy of every screen on the phone, saves all months, Recurring, Accounts and
+  recent payments ahead of time on Wi-Fi, and shows the copy with a banner when the server can't be
+  reached. Changes wait for the server. Copies expire after 14 days and are wiped when the device is revoked.
 - Month: swipe to the next or previous month. The page follows the finger, is thrown past a third of
   the screen or on a quick flick, springs back otherwise, and stretches only a little at the first or
   current month; a short vibration marks the point of no return. Neighbouring months are fetched in

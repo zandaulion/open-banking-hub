@@ -32,4 +32,7 @@ Out of scope: Enable Banking, the banks, Tailscale, reverse proxies and the oper
 - The signing key in `secrets/` grants read access to every linked account while consents are valid.
   If it leaks, rotate the key in the Enable Banking Control Panel and revoke the consents in your banks'
   apps.
-- Revoke lost phones with `bankhub devices --revoke <id>`.
+- Each registered phone keeps an offline copy of what the app shows, including payee names, in the
+  browser's storage for the app (deleted after 14 days without reaching the server, and wiped when the
+  server rejects the device). Anyone using the unlocked phone can open it. Revoke lost phones with
+  `bankhub devices --revoke <id>`.

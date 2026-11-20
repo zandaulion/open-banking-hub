@@ -165,6 +165,10 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
   history goes, when backups last ran) and **notifications** for this phone: a large payment, a low
   balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that
   stopped. By default notifications say what happened, without amounts or payees on the lock screen.
+- **Offline**: every screen keeps a copy on the phone, and on Wi-Fi the app saves all months,
+  Recurring, Accounts and recent payments ahead of time. Without the server it shows that copy, with a
+  banner saying when it was saved; changes wait for the server. Copies older than 14 days are deleted,
+  and a revoked phone wipes its copy as soon as it reaches the server.
 - **Sort**: unrecognised payees, biggest first. Give each a category, and choose whether its
   name may be shown to AI assistants (keep it off for people and small local shops).
 

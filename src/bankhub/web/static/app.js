@@ -64,19 +64,98 @@ function monthData(m) {
   return promise;
 }
 
+// Offline copy: every answer the app reads is kept on this phone and used when the server can't be
+// reached. Copies older than 14 days are deleted, and a device the server no longer accepts wipes them.
+const DATA_CACHE = 'bankhub-data-v1';
+const OFFLINE_MAX_MS = 14 * 24 * 3600 * 1000;
+const offlineKey = (path) => new Request(new URL(`api/${path}`, location.href).href);
+async function offlineSave(path, json) {
+  try {
+    const c = await caches.open(DATA_CACHE);
+    await c.put(offlineKey(path), new Response(JSON.stringify(json),
+      { headers: { 'Content-Type': 'application/json', 'X-Saved-At': String(Date.now()) } }));
+  } catch {}
+}
+async function offlineRead(path) {
+  try {
+    const c = await caches.open(DATA_CACHE);
+    const r = await c.match(offlineKey(path));
+    if (!r) return null;
+    const at = Number(r.headers.get('X-Saved-At'));
+    if (!at || Date.now() - at > OFFLINE_MAX_MS) { await c.delete(offlineKey(path)); return null; }
+    return { at, json: await r.json() };
+  } catch { return null; }
+}
+async function offlineWipe() { try { await caches.delete(DATA_CACHE); } catch {} }
+async function offlinePrune() {
+  try {
+    const c = await caches.open(DATA_CACHE);
+    for (const req of await c.keys()) {
+      const r = await c.match(req);
+      if (!r || Date.now() - Number(r.headers.get('X-Saved-At')) > OFFLINE_MAX_MS) await c.delete(req);
+    }
+  } catch {}
+}
+const offlineBar = document.getElementById('offline');
+function showOffline(at) {
+  state.offline = true;
+  state.usedOffline = true;
+  offlineBar.replaceChildren(
+    h('span', {}, `Offline · data saved ${new Date(at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`),
+    h('button', { class: 'chip', onclick: () => refresh() }, 'Retry'));
+  offlineBar.hidden = false;
+}
+function showOnline() { state.offline = false; offlineBar.hidden = true; }
+
 async function api(path, { method = 'GET', body } = {}) {
   if (method !== 'GET') monthCache.clear();
   const opts = { method, credentials: 'same-origin', headers: {} };
   if (method !== 'GET') { opts.headers['X-Bankhub'] = '1'; }
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-  const r = await fetch(`api/${path}`, opts);
+  let r;
+  try {
+    r = await fetch(`api/${path}`, opts);
+    if (method === 'GET' && [502, 503, 504].includes(r.status)) throw new TypeError('server unavailable');
+  } catch (err) {
+    if (method !== 'GET') throw new ApiError(0, "You're offline. Changes need the server; try again once you're connected.");
+    const saved = await offlineRead(path);
+    if (saved) { showOffline(saved.at); return saved.json; }
+    throw new ApiError(0, "You're offline, and this screen hasn't been saved on this phone yet.");
+  }
+  if (r.status === 401) await offlineWipe();     // revoked or unregistered: nothing stays on the phone
   if (!r.ok) {
     let msg = r.statusText || `Server error ${r.status}`;
     try { msg = (await r.json()).detail || msg; } catch {}
     if (r.status >= 500) msg = `Server error ${r.status}. ${msg === `Server error ${r.status}` ? '' : msg}`.trim();
     throw new ApiError(r.status, msg);
   }
-  return r.json();
+  const json = await r.json();
+  if (method === 'GET') { offlineSave(path, json); showOnline(); }
+  return json;
+}
+
+// On Wi-Fi, at most every six hours, save the screens ahead of time: every month, Recurring, Accounts,
+// Sort, My rules and the latest ~600 payments.
+let filling = false;
+async function fillOfflineCopy(months) {
+  const conn = navigator.connection;
+  if (filling || !navigator.onLine || (conn && (conn.saveData || conn.type === 'cellular'))) return;
+  const last = Number(localStorage.getItem('bankhub:offline-filled') || 0);
+  if (Date.now() - last < 6 * 3600 * 1000) return;
+  filling = true;
+  try { await fillAll(months); } finally { filling = false; }
+}
+async function fillAll(months) {
+  const paths = [...months.map((m) => `overview?month=${m}`), 'recurring', 'accounts', 'alerts', 'inbox', 'rules',
+                 ...Array.from({ length: 10 }, (_, i) => `transactions?${new URLSearchParams({ offset: i * 60, limit: 60 })}`)];
+  for (const p of paths) {
+    if (!navigator.onLine) return;
+    try { await api(p); } catch { return; }
+    if (state.offline) return;                     // the server went away mid-way: try again later
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  // Only a complete pass counts; an interrupted one (a reload, a lost connection) is retried next time.
+  localStorage.setItem('bankhub:offline-filled', String(Date.now()));
 }
 
 // ---------------------------------------------------------------- tooltip
@@ -213,7 +292,7 @@ const view = document.getElementById('view');
 const titleEl = document.getElementById('title');
 const actionsEl = document.getElementById('topbar-actions');
 const tabbar = document.getElementById('tabbar');
-const state = { month: thisMonth(), categories: null, scroll: {} };
+const state = { month: thisMonth(), categories: null, scroll: {}, offline: false, usedOffline: false };
 
 function parseHash() {
   const raw = location.hash.slice(1);
@@ -232,7 +311,8 @@ function go(name, params, { replace = false } = {}) {
   if (replace) {
     navMode = 'keep';
     history.replaceState(history.state, '', hash);
-    route();
+    offlinePrune();
+route();
   } else {
     navMode = 'top';
     location.hash = hash.slice(1);
@@ -242,7 +322,7 @@ function refresh() { navMode = 'keep'; monthCache.clear(); return route(); }
 function setTitle(t, ...actions) { titleEl.textContent = t; actionsEl.replaceChildren(...actions); }
 function fail(err) {
   if (err.status === 401) return renderActivate();
-  view.replaceChildren(h('div', { class: 'card' }, h('p', {}, 'Something went wrong.'),
+  view.replaceChildren(h('div', { class: 'card' }, h('p', {}, err.status === 0 ? "You're offline" : 'Something went wrong.'),
     h('p', { class: 'muted' }, err.message || 'No details were given.'),
     h('button', { class: 'btn', onclick: () => refresh() }, 'Try again')));
 }
@@ -252,6 +332,7 @@ const TAB_OF = { rules: 'inbox' };
 async function route() {
   hideTip();
   state.loadMore = null;
+  state.usedOffline = false;
   const openSheet = document.getElementById('sheet');
   if (openSheet.open) openSheet.close();
   const mode = navMode, y = scrollY;
@@ -265,6 +346,7 @@ async function route() {
     if (a.dataset.tab === (TAB_OF[name] || name)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
   try { await fn(params); tabbar.hidden = false; slideIn(); } catch (e) { fail(e); }
+  if (!state.usedOffline) showOnline();
   if (mode === 'keep') scrollTo(0, y);
   else if (mode === 'top') scrollTo(0, 0);
   else {
@@ -279,7 +361,8 @@ async function route() {
 }
 addEventListener('hashchange', (e) => {
   if (!routing) scrollPos[new URL(e.oldURL).hash || '#month'] = scrollY;
-  route();
+  offlinePrune();
+route();
 });
 addEventListener('scroll', () => { if (!routing) scrollPos[currentKey()] = scrollY; }, { passive: true });
 
@@ -384,7 +467,8 @@ function renderActivate() {
     try {
       await api('invites/redeem', { method: 'POST', body: { code: input.value } });
       go('month');
-      route();
+      offlinePrune();
+route();
     } catch (e) { msg.textContent = e.message; btn.disabled = false; }
   });
   view.replaceChildren(h('section', { class: 'card narrow' },
@@ -405,6 +489,7 @@ async function renderMonth(params) {
   // Fetch the neighbours in the background, so a swipe never waits for the network.
   if (m > d.trend[0].month) monthData(shiftMonth(m, -1)).catch(() => {});
   if (!isCurrent) monthData(shiftMonth(m, 1)).catch(() => {});
+  if (!state.offline) setTimeout(() => fillOfflineCopy(d.trend.map((t) => t.month)).catch(() => {}), 3000);
   const compareTo = d.to_date ? d.to_date.previous_spent_ron : d.previous.spent_ron;
   const compareText = d.to_date ? `vs the same ${d.to_date.day} days of ${monthLabel(d.previous.month)}` : `vs ${monthLabel(d.previous.month)}`;
   const hasIncome = d.has_regular_income;
@@ -946,7 +1031,7 @@ async function renderAccounts(params) {
           h('span', {}, a.currency !== 'RON' ? ron(a.amount_ron) : '')))))),
     h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, 'Tap an account to rename it. Names stay in this app; AI assistants see the neutral label.'));
 
-  const syncBtn = h('button', { class: 'btn' }, 'Sync now');
+  const syncBtn = h('button', { class: 'btn', disabled: !!state.offline }, state.offline ? 'Sync needs the server' : 'Sync now');
   const syncMsg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
   syncBtn.addEventListener('click', async () => {
     syncBtn.disabled = true; syncMsg.textContent = 'Syncing…';
@@ -966,7 +1051,9 @@ async function renderAccounts(params) {
     h('div', { style: 'margin-top:12px' }, syncBtn), syncMsg);
 
   const link = h('section', { class: 'card' }, h('h2', {}, 'Link or renew a bank'));
-  if (d.can_link) {
+  if (state.offline) {
+    link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking a bank needs the server. Try again once you are connected.'));
+  } else if (d.can_link) {
     const sel = h('select', {}, h('option', { value: '' }, 'Loading banks…'));
     const go_ = h('button', { class: 'btn primary', disabled: true }, 'Continue to the bank');
     const lmsg = h('p', { class: 'muted', role: 'status' });
@@ -986,4 +1073,5 @@ async function renderAccounts(params) {
   view.replaceChildren(total, banks, healthCard(d.health), alertsCard(), link);
 }
 
+offlinePrune();
 route();

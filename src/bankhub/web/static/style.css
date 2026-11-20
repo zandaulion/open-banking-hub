@@ -193,3 +193,8 @@ table.data th:first-child, table.data td:first-child { text-align: left; }
 /* The Month page is dragged sideways by hand; vertical scrolling stays with the browser. */
 main#view { touch-action: pan-y; will-change: transform; }
 .scroller { touch-action: pan-x pan-y; }
+
+.offline-bar { position: sticky; top: calc(48px + env(safe-area-inset-top)); z-index: 4; margin: 0 14px 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px;
+  border-radius: 12px; background: var(--surface-2); color: var(--text-secondary); font-size: 14px; }
+.offline-bar .chip { min-height: 30px; padding: 4px 12px; }

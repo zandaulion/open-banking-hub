@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-11-20)
 
 - Offline: the app keeps a copy of every screen on the phone, saves all months, Recurring, Accounts and
   recent payments ahead of time on Wi-Fi, and shows the copy with a banner when the server can't be

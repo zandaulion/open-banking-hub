@@ -252,3 +252,35 @@ def category_choices(conn: sqlite3.Connection, rules_text: str) -> list[str]:
     cats |= {m["category"] for m in data.get("merchants") or []}
     cats |= {c["category"] for c in data.get("category_rules") or []}
     return sorted(cats - {"uncategorized", "transfers", "income"})
+
+
+def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
+    """Is each bank connection alive, how far back is history, and when did backups last run."""
+    from ..sync import BACKFILL_DAYS, WINDOWED
+    target = (date.today() - timedelta(days=BACKFILL_DAYS)).isoformat()
+    accounts = []
+    for a in conn.execute(
+            """SELECT a.id, a.alias, coalesce(a.display_name, a.alias) AS name, a.institution, a.history_from,
+                      (SELECT min(booking_date) FROM transactions_raw WHERE account_id = a.id) AS oldest,
+                      (SELECT max(at) FROM sync_results WHERE account_id = a.id AND skipped IS NULL) AS last_ok,
+                      (SELECT max(ts) FROM api_requests WHERE account_id = a.id AND kind = 'transactions') AS last_request
+               FROM accounts a WHERE a.active = 1 ORDER BY a.institution, a.alias"""):
+        last = conn.execute("SELECT at, skipped FROM sync_results WHERE account_id=? ORDER BY id DESC LIMIT 1",
+                            (a["id"],)).fetchone()
+        accounts.append({"name": a["name"], "institution": a["institution"],
+                         "last_ok": a["last_ok"] or a["last_request"], "oldest": a["oldest"],
+                         # Banks fetched in windows fill in their history over several syncs.
+                         "backfilling": a["institution"] in WINDOWED and (
+                             a["history_from"] is None or a["history_from"] > target),
+                         "history_from": a["history_from"],
+                         "last_skipped": last["skipped"] if last and last["skipped"] else None,
+                         "last_skipped_at": last["at"] if last and last["skipped"] else None})
+    run = conn.execute("SELECT started_at, status, error FROM sync_runs ORDER BY id DESC LIMIT 1").fetchone()
+    backups = data_dir / "backups"
+    snaps = sorted(p.name for p in backups.iterdir() if p.is_dir() and len(p.name) == 16) if backups.exists() else []
+    local = f"{snaps[-1][:4]}-{snaps[-1][4:6]}-{snaps[-1][6:8]}T{snaps[-1][9:11]}:{snaps[-1][11:13]}:00+00:00" \
+        if snaps else None
+    marker = backups / ".offsite-ok"
+    offsite = marker.read_text().strip() if marker.exists() else None
+    return {"accounts": accounts, "history_target": target, "last_run": dict(run) if run else None,
+            "backup_local": local, "backup_offsite": offsite}

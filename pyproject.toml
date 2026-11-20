@@ -16,6 +16,7 @@ dependencies = [
     "mcp>=2.3,<3",
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    "pywebpush>=2.5",
 ]
 
 [project.urls]

@@ -690,6 +690,122 @@ async function openTxSheet(t, onDone) {
 }
 function titleCase(s) { return s.replace(/\b\w/g, (c) => c.toUpperCase()); }
 
+// ---------------------------------------------------------------- alerts
+function b64ToBytes(b64) {
+  const s = atob((b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(s, (c) => c.charCodeAt(0));
+}
+function alertsCard() {
+  const card = h('section', { class: 'card' }, h('h2', {}, 'Notifications'), h('p', { class: 'muted' }, 'Loading…'));
+  const draw = async () => {
+    const st = await api('alerts');
+    const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const msg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
+    const actions = h('div', { class: 'chips', style: 'margin-top:10px' });
+    if (!supported) {
+      actions.append(h('p', { class: 'muted' }, 'This browser cannot receive notifications. Install the app to the home screen and open it from there.'));
+    } else if (!st.subscribed) {
+      const on = h('button', { class: 'btn primary' }, 'Turn on for this phone');
+      on.addEventListener('click', async () => {
+        on.disabled = true; msg.textContent = 'Asking for permission…';
+        try {
+          if ((await Notification.requestPermission()) !== 'granted') throw new Error('Notifications are blocked for this app in the phone settings.');
+          const reg = await navigator.serviceWorker.ready;
+          const sub = (await reg.pushManager.getSubscription()) ||
+            await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(st.public_key) });
+          await api('push/subscribe', { method: 'POST', body: sub.toJSON() });
+          draw();
+        } catch (e) { msg.textContent = e.message; on.disabled = false; }
+      });
+      actions.append(on);
+    } else {
+      const test = h('button', { class: 'btn' }, 'Send a test');
+      test.addEventListener('click', async () => {
+        test.disabled = true;
+        try { await api('push/test', { method: 'POST' }); msg.textContent = 'Sent. It should appear in a few seconds.'; }
+        catch (e) { msg.textContent = e.message; }
+        test.disabled = false;
+      });
+      const off = h('button', { class: 'btn' }, 'Turn off');
+      off.addEventListener('click', async () => {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) await sub.unsubscribe().catch(() => {});
+        await api('push/unsubscribe', { method: 'POST' });
+        draw();
+      });
+      actions.append(test, off);
+    }
+    const s = st.settings;
+    const num = (key, label, hint) => {
+      const input = h('input', { type: 'number', min: '0', step: '100', value: String(s[key] || 0), inputmode: 'numeric' });
+      input.dataset.key = key;
+      return h('label', { class: 'field' }, `${label}`, input, h('span', { class: 'faint', style: 'font-size:12px' }, hint));
+    };
+    const tick = (key, label) => {
+      const input = h('input', { type: 'checkbox', checked: !!s[key] });
+      input.dataset.key = key;
+      return h('label', { class: 'toggle' }, input, label);
+    };
+    const form = h('div', {},
+      num('large_payment_ron', 'A payment of at least (RON)', '0 turns it off'),
+      num('balance_below_ron', 'Balance of RON accounts below (RON)', '0 turns it off'),
+      tick('income_late', 'Regular income is late'),
+      tick('price_change', 'A regular payment changes amount'),
+      tick('consent_expiring', 'A bank connection is about to end'),
+      tick('health', 'A bank stopped syncing, or backups stopped'),
+      tick('details', 'Show amounts and payees on the lock screen'));
+    const save = h('button', { class: 'btn' }, 'Save alert settings');
+    save.addEventListener('click', async () => {
+      const body = {};
+      for (const el of form.querySelectorAll('input')) body[el.dataset.key] = el.type === 'checkbox' ? el.checked : Number(el.value || 0);
+      save.disabled = true;
+      try { await api('alerts/settings', { method: 'POST', body }); msg.textContent = 'Saved.'; }
+      catch (e) { msg.textContent = e.message; }
+      save.disabled = false;
+    });
+    const recent = st.recent.length ? h('div', {}, h('h2', { style: 'margin-top:14px' }, 'Recent alerts'),
+      h('ul', { class: 'rows' }, st.recent.map((r) => h('li', {},
+        h('div', { class: 'row-head' }, h('span', { class: 'name' }, r.title), h('span', { class: 'faint', style: 'font-size:13px' }, ago(r.at))),
+        h('div', { class: 'desc' }, r.body))))) : '';
+    card.replaceChildren(h('h2', {}, 'Notifications'),
+      h('p', { class: 'muted', style: 'margin-top:0' }, st.subscribed ? 'On for this phone. Checked after every sync.' : 'Get a notification on this phone when something needs a look.'),
+      actions, form, save, msg, recent);
+  };
+  draw().catch((e) => { card.replaceChildren(h('h2', {}, 'Notifications'), h('p', { class: 'muted' }, e.message)); });
+  return card;
+}
+
+// ---------------------------------------------------------------- health
+function ago(iso) {
+  if (!iso) return 'never';
+  const h = (Date.now() - new Date(iso).getTime()) / 3.6e6;
+  if (h < 1) return 'within the hour';
+  if (h < 36) return `${Math.round(h)} h ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+function healthCard(hd) {
+  if (!hd) return '';
+  const line = (ok, label, detail) => h('li', {},
+    h('div', { class: 'row-head' }, h('span', { class: 'name' }, `${ok ? '✓' : '⚠'} ${label}`),
+      h('span', { class: ok ? 'faint' : 'up', style: 'font-size:13px;white-space:nowrap' }, detail)));
+  const rows = hd.accounts.map((a) => {
+    const stale = !a.last_ok || (Date.now() - new Date(a.last_ok).getTime()) > 36 * 3.6e6;
+    let detail = a.last_ok ? `synced ${ago(a.last_ok)}` : 'never synced';
+    if (a.last_skipped) detail = `skipped ${ago(a.last_skipped_at)}: limit`;
+    const row = line(!stale && !a.last_skipped, `${a.institution} · ${a.name}`, detail);
+    if (a.backfilling) row.append(h('div', { class: 'row-sub' }, h('span', {},
+      `History back to ${a.oldest ? dayLabel(a.oldest) : '—'}, filling in towards ${dayLabel(hd.history_target)}`)));
+    return row;
+  });
+  const localOk = hd.backup_local && (Date.now() - new Date(hd.backup_local).getTime()) < 36 * 3.6e6;
+  const offOk = hd.backup_offsite && (Date.now() - new Date(hd.backup_offsite).getTime()) < 36 * 3.6e6;
+  rows.push(line(localOk, 'Local backup', ago(hd.backup_local)));
+  rows.push(line(offOk, 'Off-site backup', hd.backup_offsite ? ago(hd.backup_offsite) : 'not set up'));
+  if (hd.last_run && hd.last_run.status === 'error') rows.push(line(false, 'Last sync', hd.last_run.error));
+  return h('section', { class: 'card' }, h('h2', {}, 'Health'), h('ul', { class: 'rows' }, rows));
+}
+
 // ---------------------------------------------------------------- accounts
 function openRenameSheet(a) {
   const input = h('input', { value: a.name === a.alias ? '' : a.name, placeholder: a.alias, maxlength: '40', autocomplete: 'off' });
@@ -769,7 +885,7 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
-  view.replaceChildren(total, banks, link);
+  view.replaceChildren(total, banks, healthCard(d.health), alertsCard(), link);
 }
 
 route();

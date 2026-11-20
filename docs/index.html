@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Banking Hub · your bank accounts, self-hosted and read-only</title>
+<meta name="description" content="Self-hosted, read-only view of your own bank accounts through Enable Banking (PSD2): where the money went, what you pay every month, a private phone app and a redacted MCP server for AI assistants. MIT.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+<meta property="og:title" content="Open Banking Hub">
+<meta property="og:description" content="Your bank accounts, self-hosted and read-only: spending, subscriptions, income, a private phone app and a redacted MCP server.">
+<meta property="og:image" content="https://zandaulion.github.io/open-banking-hub/screenshots/month-light.png">
+</head>
+<body>
+<main>
+<header class="top">
+  <a class="brand" href="./"><img src="icon.svg" alt="">Open Banking Hub</a>
+  <nav><a href="romania/">România</a><a href="https://github.com/zandaulion/open-banking-hub">GitHub</a></nav>
+</header>
+
+<h1>Your bank accounts, on your own server.</h1>
+<p class="lead">A self-hosted, read-only view of your own accounts through the Enable Banking PSD2 API.
+It answers two questions well: <strong>where did my money go</strong>, and <strong>what am I paying every month</strong>.
+With a private phone app, and an MCP server so an AI assistant can help, from a redacted view.</p>
+<div class="cta">
+  <a class="btn primary" href="https://github.com/zandaulion/open-banking-hub#setup">Set it up</a>
+  <a class="btn" href="https://github.com/zandaulion/open-banking-hub#try-it-without-a-bank">Try it without a bank</a>
+  <a class="btn" href="https://github.com/zandaulion/open-banking-hub/releases/latest">Latest release</a>
+</div>
+
+<div class="shots">
+  <figure><img src="screenshots/month-light.png" alt="Month view: spent, income, what is left, and every month in a chart" loading="lazy"><figcaption>Month</figcaption></figure>
+  <figure><img src="screenshots/recurring-light.png" alt="Recurring payments with month-over-month change and regular income" loading="lazy"><figcaption>Recurring</figcaption></figure>
+  <figure><img src="screenshots/payment-light.png" alt="A payment: change its category, or mark it as a one-off" loading="lazy"><figcaption>A payment</figcaption></figure>
+  <figure><img src="screenshots/month-dark.png" alt="Month view in dark mode" loading="lazy"><figcaption>Dark mode</figcaption></figure>
+</div>
+<p style="color:var(--muted);font-size:14px">Screenshots show made-up data from the built-in demo.</p>
+
+<h2>What it does</h2>
+<div class="grid">
+  <div class="card"><h3>Honest spending</h3><p>Transfers between your own accounts are left out, refunds reduce their category, and very large one-offs (a car, a property) are shown apart instead of swamping the month.</p></div>
+  <div class="card"><h3>Subscriptions and bills</h3><p>Detected automatically, with the change from the previous bill, what is still due this month, and your regular income.</p></div>
+  <div class="card"><h3>Alerts on your phone</h3><p>A large payment, a low balance, a late salary, a price rise, a bank connection about to expire, a backup that stopped.</p></div>
+  <div class="card"><h3>Private by design</h3><p>Read-only bank access, data in one directory on your machine, the app only on your private network, each phone registered by invitation.</p></div>
+  <div class="card"><h3>AI with a redacted view</h3><p>A read-only MCP server: categories, amounts and known merchants, never people's names, IBANs or payment descriptions. Tested by a leak scanner.</p></div>
+  <div class="card"><h3>Real bank quirks handled</h3><p>Revolut pockets and top-ups, ING's description format, BRD's 20-transaction pages and one-consent rule. <a href="romania/">More for Romania</a>.</p></div>
+</div>
+
+<h2>Get started</h2>
+<pre>git clone https://github.com/zandaulion/open-banking-hub.git && cd open-banking-hub
+uv sync
+uv run bankhub init          # signing key and settings; prints the public key for Enable Banking</pre>
+<p>Or with Docker: <code>docker compose pull</code>, then <code>docker compose run --rm app bankhub init</code>.
+Enable Banking's restricted production mode is free for your own accounts.
+The full guide is in the <a href="https://github.com/zandaulion/open-banking-hub#setup">README</a>,
+deployment details in <a href="https://github.com/zandaulion/open-banking-hub/blob/main/docs/DEPLOY.md">DEPLOY.md</a>.</p>
+
+<footer>
+  MIT licensed · Not affiliated with Enable Banking or any bank · No payment code, ever ·
+  <a href="https://github.com/zandaulion/open-banking-hub/blob/main/SECURITY.md">Security</a>
+</footer>
+</main>
+</body>
+</html>

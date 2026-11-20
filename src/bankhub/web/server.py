@@ -32,6 +32,7 @@ from ..db import connect, connect_readonly
 from ..enablebanking import EnableBanking
 from ..rules import load_rules
 from . import data, rules_edit
+from .alerts import Alerts
 from .auth import AuthStore, RedeemLimiter
 
 COOKIE = "bankhub_device"
@@ -113,6 +114,21 @@ class Recategorize(BaseModel):
     subcategory: str | None = None
 
 
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+class AlertSettings(BaseModel):
+    large_payment_ron: float | None = None
+    balance_below_ron: float | None = None
+    income_late: bool | None = None
+    price_change: bool | None = None
+    consent_expiring: bool | None = None
+    health: bool | None = None
+    details: bool | None = None
+
+
 class AccountName(BaseModel):
     name: str | None = None
 
@@ -147,6 +163,7 @@ def create_app(cfg: WebConfig) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     _secure(app)
     auth = AuthStore(cfg.core.data_dir / "web.db")
+    alerts = Alerts(cfg.core.data_dir / "web.db", cfg.core.data_dir)
     limiter = RedeemLimiter()
     write_lock = threading.Lock()   # rebuilds and syncs from the UI run one at a time
     link_status: dict = {}          # the latest bank import started from the app
@@ -243,9 +260,38 @@ def create_app(cfg: WebConfig) -> FastAPI:
             result = data.accounts(conn)
         result["can_link"] = bool(cfg.core.app_id) and cfg.core.redirect_url == cfg.callback_url
         result["link_status"] = dict(link_status) or None
+        with ro() as conn:
+            result["health"] = data.health(conn, cfg.core.data_dir)
         result["one_off_ron"] = cfg.core.one_off_ron
         result["callback_url"] = cfg.callback_url
         return result
+
+    @app.get("/api/alerts")
+    def alerts_status(dev: dict = Depends(device)):
+        return alerts.status(dev["id"])
+
+    @app.post("/api/alerts/settings")
+    def alerts_settings(body: AlertSettings, dev: dict = Depends(device)):
+        return alerts.save_settings({k: v for k, v in body.model_dump().items() if v is not None})
+
+    @app.post("/api/push/subscribe")
+    def push_subscribe(body: PushSubscription, dev: dict = Depends(device)):
+        try:
+            alerts.subscribe(dev["id"], body.model_dump())
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return alerts.status(dev["id"])
+
+    @app.post("/api/push/unsubscribe")
+    def push_unsubscribe(dev: dict = Depends(device)):
+        alerts.unsubscribe(dev["id"])
+        return alerts.status(dev["id"])
+
+    @app.post("/api/push/test")
+    def push_test(dev: dict = Depends(device)):
+        if not alerts.test(dev["id"]):
+            raise HTTPException(400, "This device is not subscribed, or the push service refused the message.")
+        return {"ok": True}
 
     @app.post("/api/accounts/{alias}/name")
     def rename(alias: str, body: AccountName, dev: dict = Depends(device)):
@@ -375,6 +421,11 @@ def create_app(cfg: WebConfig) -> FastAPI:
             sync.expire_consents(conn)
             result = sync.sync_all(conn, eb)
         rebuilt = rebuild()
+        try:
+            with ro() as conn:
+                alerts.run(conn)
+        except Exception:   # an alert problem must never break a sync
+            pass
         return {"accounts": [a.__dict__ for a in result.accounts], "rebuilt": rebuilt}
 
     # --- bank linking ------------------------------------------------------------

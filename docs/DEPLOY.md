@@ -109,6 +109,8 @@ Store the restic password outside this machine: without it the copy cannot be op
 ```bash
 git pull && uv sync
 systemctl --user restart bankhub-web.service
+# or, with Docker Compose:
+docker compose pull && docker compose up -d
 ```
 
 Database migrations run automatically. After a change to a bank parser,

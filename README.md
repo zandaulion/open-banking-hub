@@ -17,6 +17,9 @@ read-only [MCP](https://modelcontextprotocol.io) server, so an AI assistant can 
 about your spending from a **redacted** view: categories, amounts and known merchants, never
 people's names, IBANs or payment descriptions.
 
+Website: **[zandaulion.github.io/open-banking-hub](https://zandaulion.github.io/open-banking-hub/)**
+([in Romanian](https://zandaulion.github.io/open-banking-hub/romania/)).
+
 Built and tested with Revolut, ING Romania and BRD; any bank Enable Banking supports should work,
 with bank-specific quirks described in [docs/BANKS.md](docs/BANKS.md).
 
@@ -93,7 +96,8 @@ uv run bankhub init --app-id <application ID> --base-url https://<your-machine>.
 
 ### 3. Run it
 
-**With Docker Compose** (the data lives in a volume; the app is published on 127.0.0.1 only):
+**With Docker Compose**, using the published image `ghcr.io/zandaulion/open-banking-hub` (amd64 and
+arm64; the data lives in a volume and the app is published on 127.0.0.1 only):
 
 ```bash
 docker compose run --rm app bankhub init                    # prints the public key for step 2
@@ -157,6 +161,10 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
 - **Activity**: every transaction; search by name or by amount (`38.68`, `>500`, `100-200`).
   Tap one to change its category, for that payment or for every payment to that payee, or to mark
   it as a one-off.
+- **Accounts**: balances, bank connections, a **health** check (is each bank syncing, how far back
+  history goes, when backups last ran) and **notifications** for this phone: a large payment, a low
+  balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that
+  stopped. By default notifications say what happened, without amounts or payees on the lock screen.
 - **Sort**: unrecognised payees, biggest first. Give each a category, and choose whether its
   name may be shown to AI assistants (keep it off for people and small local shops).
 
@@ -170,7 +178,8 @@ claude mcp add bankhub -- /path/to/open-banking-hub/.venv/bin/bankhub mcp
 ```
 
 Tools: `get_sync_status`, `get_balances`, `query_transactions`, `get_spending_summary`,
-`get_recurring_payments`. The server opens the database read-only and reads only the redacted
+`get_recurring_payments`. Ready-made prompts: *Monthly review*, *Subscription audit*, *Unusual spending*,
+*Savings ideas*. The server opens the database read-only and reads only the redacted
 tables. Check what an assistant can see with `bankhub inspect-redaction --samples 0`.
 
 ### Your own rules

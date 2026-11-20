@@ -41,7 +41,7 @@ uv run bankhub init
 Docker:
 
 ```bash
-docker compose build
+docker compose pull                     # the published image, amd64 or arm64
 docker compose run --rm app bankhub init
 ```
 
@@ -92,7 +92,7 @@ the human to store the restic password outside the machine.
 ## Upgrading
 
 `git pull && uv sync && systemctl --user restart bankhub-web.service`, or
-`docker compose build && docker compose up -d`. Take a `bankhub backup` first. Migrations run on start;
+`docker compose pull && docker compose up -d`. Take a `bankhub backup` first. Migrations run on start;
 an older release cannot be assumed to read a newer database, so roll back by restoring the snapshot.
 
 ## Never

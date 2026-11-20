@@ -47,6 +47,23 @@ def _money(v: float | None) -> str:
     return "—" if v is None else f"{v:,.2f}"
 
 
+def _alerts():
+    from .web.alerts import Alerts
+    from .web.auth import AuthStore
+    cfg = _cfg()
+    AuthStore(cfg.data_dir / "web.db")      # makes sure the devices table exists
+    return Alerts(cfg.data_dir / "web.db", cfg.data_dir)
+
+
+def _run_alerts(conn: sqlite3.Connection) -> None:
+    try:
+        sent = _alerts().run(conn)
+        if sent:
+            typer.echo(f"Alerts: {len(sent)} new")
+    except Exception as e:   # an alert problem must never break a sync
+        typer.echo(f"Alerts skipped: {type(e).__name__}: {e}")
+
+
 def _rebuild(conn: sqlite3.Connection) -> dict:
     fx.ensure_rates(conn)
     return ledger.rebuild(conn, load_rules(_cfg().rules_path), one_off_ron=_cfg().one_off_ron)
@@ -144,6 +161,7 @@ def sync_cmd(force: bool = typer.Option(False, help="Ignore the daily request bu
     for a in result.accounts:
         typer.echo(f"  {a.alias}: " + (f"skipped ({a.skipped})" if a.skipped else f"{a.fetched} fetched, {a.new} new"))
     typer.echo(f"Rebuilt: {_rebuild(conn)}")
+    _run_alerts(conn)
     for b in queries.sync_status(conn)["banks"]:
         if b["renew_soon"]:
             typer.echo(f"WARNING: {b['institution']} consent expires in {b['consent_days_left']} days; "
@@ -460,3 +478,14 @@ def demo(months: int = typer.Option(14, help="How many months of made-up history
     typer.echo(f"Added {n} made-up transactions in {cfg.data_dir}.")
     typer.echo(f"Rebuilt: {_rebuild(conn)}")
     typer.echo("Next: bankhub invite --label demo, then bankhub web, and open the printed link.")
+
+
+@app.command()
+def alerts(send: bool = typer.Option(False, help="Send new alerts now instead of only listing them")):
+    """List the alerts that would go out now (they are sent automatically after each sync)."""
+    conn = _db()
+    found = _alerts().run(conn, send=send)
+    if not found:
+        typer.echo("Nothing new to alert about.")
+    for a in found:
+        typer.echo(f"{a.title}: {a.body}")

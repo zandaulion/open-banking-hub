@@ -6,8 +6,9 @@
 # The app is published on 127.0.0.1 only: put it behind a private reverse proxy (see docs/DEPLOY.md).
 services:
   app:
-    build: .
-    image: bank-hub
+    # The published image (amd64 and arm64). To build from this checkout instead, replace
+    # both `image:` lines with `image: bank-hub` and add `build: .` here.
+    image: ghcr.io/zandaulion/open-banking-hub:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:8041:8041"
@@ -16,7 +17,7 @@ services:
 
   # Twice-daily bank sync and a nightly snapshot, without a host timer.
   scheduler:
-    image: bank-hub
+    image: ghcr.io/zandaulion/open-banking-hub:latest
     restart: unless-stopped
     depends_on: [app]
     volumes:

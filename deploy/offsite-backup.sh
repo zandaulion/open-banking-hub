@@ -28,6 +28,8 @@ case "${1:-}" in
     [[ -f "$snap/bankhub.db" ]] || { echo "Latest snapshot has no bankhub.db." >&2; exit 1; }
     # Upload from inside the snapshot so restored paths do not depend on the timestamp.
     cd "$snap" && "${restic[@]}" backup . --host "$RESTIC_HOST" --tag bankhub --skip-if-unchanged
+    # Tell the app when the last off-site copy succeeded (shown in its health view).
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$BANKHUB_DATA_DIR/backups/.offsite-ok"
     ;;
   maintain)
     "${restic[@]}" forget --host "$RESTIC_HOST" --tag bankhub --keep-daily 14 --keep-weekly 8 --keep-monthly 24 --prune

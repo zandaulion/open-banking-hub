@@ -247,12 +247,15 @@ def sync_all(conn: sqlite3.Connection, eb: EnableBanking, *, force: bool = False
             " WHERE a.active=1 AND c.status='active' AND c.valid_until>? ORDER BY a.alias", (now,)).fetchall()
         for acc in accounts:
             try:
-                out.accounts.append(sync_account(conn, eb, acc, backfill=acc["backfilled_at"] is None, force=force))
+                r = sync_account(conn, eb, acc, backfill=acc["backfilled_at"] is None, force=force)
             except EnableBankingError as e:
                 limited = "RATE_LIMIT" in str(e) or e.status == 429
-                out.accounts.append(AccountResult(alias=acc["alias"], skipped=(
+                r = AccountResult(alias=acc["alias"], skipped=(
                     "the bank's request limit was reached; it continues at the next sync" if limited
-                    else f"bank error {e.status}")))
+                    else f"bank error {e.status}"))
+            out.accounts.append(r)
+            conn.execute("INSERT INTO sync_results(run_id, account_id, at, fetched, new, skipped) VALUES (?,?,?,?,?,?)",
+                         (run, acc["id"], utcnow(), r.fetched, r.new, r.skipped))
         conn.execute("UPDATE sync_runs SET finished_at=?, status='ok', requests=? WHERE id=?",
                      (utcnow(), eb.data_calls, run))
     except Exception as e:

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Banking Hub în România · Revolut, ING, BRD și alte bănci prin Enable Banking</title>
+<meta name="description" content="Toate conturile tale bancare din România într-o aplicație proprie, doar pentru citire: Revolut, ING, BRD, BCR, Banca Transilvania și altele prin Enable Banking (PSD2). Gratuit, open source, găzduit de tine.">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+<main>
+<header class="top">
+  <a class="brand" href="../"><img src="../icon.svg" alt="">Open Banking Hub</a>
+  <nav><a href="../">English</a><a href="https://github.com/zandaulion/open-banking-hub">GitHub</a></nav>
+</header>
+
+<h1>Conturile tale din România, într-o singură aplicație.</h1>
+<p class="lead">Open Banking Hub adună tranzacțiile din băncile tale prin Enable Banking (PSD2), le păstrează pe
+serverul tău și îți arată unde s-au dus banii, ce plătești lunar și cât ți-a rămas. Doar citire: nu poate face plăți.
+Interfața aplicației este în engleză; sumele sunt în lei, la cursul BNR.</p>
+<div class="cta">
+  <a class="btn primary" href="https://github.com/zandaulion/open-banking-hub#setup">Instalare</a>
+  <a class="btn" href="https://github.com/zandaulion/open-banking-hub/blob/main/docs/BANKS.md">Particularitățile băncilor</a>
+</div>
+
+<h2>Bănci</h2>
+<p>Enable Banking oferă acces la conturile personale de la aceste bănci și instituții din România. Primele trei au
+fost folosite zilnic la construirea aplicației; celelalte ar trebui să funcționeze, dar pot avea particularități.</p>
+<table>
+  <tr><th>Bancă</th><th>Stare</th><th>De știut</th></tr>
+  <tr><td>Revolut</td><td><span class="tag ok">testată</span></td><td>Aproximativ doi ani de istoric la prima conectare. Fiecare monedă și pușculiță e un cont separat; mutările între ele și alimentările cu cardul altei bănci sunt recunoscute ca transferuri între conturile tale.</td></tr>
+  <tr><td>ING</td><td><span class="tag ok">testată</span></td><td>Aproximativ doi ani de istoric. Numele beneficiarului vine în descriere, iar aplicația îl citește de acolo; tipul tranzacției (rate, asigurare, comisioane, depozite) e folosit la categorii.</td></tr>
+  <tr><td>BRD</td><td><span class="tag ok">testată</span></td><td>Un singur consimțământ activ pe aplicație: conectezi conturile în Control Panel, ștergi acel consimțământ în MyBRD, apoi conectezi BRD din aplicație. BRD dă câte 20 de tranzacții pe cerere, așa că istoricul se completează în câteva zile.</td></tr>
+  <tr><td>Banca Comercială Română (BCR), Banca Transilvania, CEC Bank, Raiffeisen, UniCredit Bank, Libra Internet Bank, Exim Banca Românească</td><td><span class="tag">netestată</span></td><td rowspan="2">Disponibile prin Enable Banking. Dacă le folosești, deschide un issue pe GitHub cu ce ai observat (fără date reale).</td></tr>
+  <tr><td>N26, Wise, bunq, PayPal, Genome, DiPocket, Airwallex, Ferratum Bank, iBanFirst</td><td><span class="tag">netestată</span></td></tr>
+</table>
+
+<h2>Gândită pentru România</h2>
+<div class="grid">
+  <div class="card"><h3>Comercianți cunoscuți</h3><p>Mega Image, Lidl, Kaufland, Profi, eMAG, Altex, Glovo, Tazz, Bolt, Digi, Orange, PPC, Engie, E-bloc, Amparcat, impozite locale și multe altele, sortate automat.</p></div>
+  <div class="card"><h3>Cursul BNR</h3><p>Plățile în euro sau alte monede sunt convertite în lei la cursul oficial BNR din ziua plății.</p></div>
+  <div class="card"><h3>Facturi variabile</h3><p>Curentul, gazul și întreținerea sunt recunoscute ca plăți lunare chiar dacă suma diferă de la lună la lună.</p></div>
+  <div class="card"><h3>Plăți mari, separat</h3><p>Avansul pentru o casă, rambursarea anticipată a unui credit sau impozitul pe o vânzare apar separat, fără să strice graficul lunii.</p></div>
+</div>
+
+<h2>Cum începi</h2>
+<p>Ai nevoie de un server mereu pornit (un VPS mic sau un calculator acasă), de o rețea privată precum Tailscale și de un cont
+Enable Banking (modul restricționat este gratuit pentru conturile proprii). Pașii completi sunt în
+<a href="https://github.com/zandaulion/open-banking-hub#setup">README</a>.</p>
+
+<footer>
+  Licență MIT · Nu este afiliată cu Enable Banking sau cu vreo bancă · Doar citire, fără cod de plăți
+</footer>
+</main>
+</body>
+</html>

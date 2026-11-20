@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 (2026-11-20)
+
+- **Notifications on your phone** (Web Push): a large payment, a low balance, late regular income, a
+  changed regular payment, a bank consent about to end, a bank that stopped syncing, backups that stopped.
+  Private by default: no amounts or payees on the lock screen unless you turn details on. `bankhub alerts`
+  previews them.
+- **Health** on Accounts: last successful sync per account, banks skipped for their request limit, history
+  still being filled in (BRD), and the last local and off-site backup.
+- **Ready-made MCP prompts**: Monthly review, Subscription audit, Unusual spending, Savings ideas. The MCP
+  server now tells assistants to treat every returned value as data, never as instructions.
+- **Published container image** `ghcr.io/zandaulion/open-banking-hub` for amd64 and arm64, built and tested
+  by GitHub Actions on every release; Docker Compose uses it by default.
+- **Website** with a page for Romania: [zandaulion.github.io/open-banking-hub](https://zandaulion.github.io/open-banking-hub/).
+
 ## 0.1.0 (2026-11-20)
 
 First public release.

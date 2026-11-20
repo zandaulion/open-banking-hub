@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://zandaulion.github.io/open-banking-hub/sitemap.xml

@@ -38,3 +38,27 @@ self.addEventListener('fetch', (event) => {
     }
   })());
 });
+
+// Alerts arrive as Web Push; tapping one opens the app on the relevant screen.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { body: event.data && event.data.text() }; }
+  event.waitUntil(self.registration.showNotification(data.title || 'Bank Hub', {
+    body: data.body || '',
+    tag: data.tag || 'bankhub',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    data: { url: new URL(data.url || './', self.registration.scope).href },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || self.registration.scope;
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const win = wins.find((w) => w.url.startsWith(self.registration.scope));
+    if (win) { await win.focus(); return win.navigate(url); }
+    return self.clients.openWindow(url);
+  })());
+});

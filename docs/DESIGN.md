@@ -114,6 +114,22 @@ and its own `web.db` for invitations and devices.
 - **Bank linking:** `/callback` accepts only a state that this device started in the last hour.
 - **Import:** runs in the background, so the phone is not left waiting.
 
+## Alerts
+
+After every sync, `bankhub/web/alerts.py` checks:
+- a payment at or above an amount, counting only transactions stored after alerts were turned on;
+- the total of RON accounts below an amount;
+- regular income marked missed;
+- a regular payment whose amount changed;
+- a consent ending within 14, 7, 3 or 0 days;
+- a bank with no successful sync for two days;
+- a local backup older than two days.
+
+Each alert has a stable key and is sent once, as Web Push (VAPID key in `secrets/vapid.pem`), to every
+registered device that turned notifications on. Only the push services of Chrome, Firefox, Edge and
+Safari are accepted as endpoints. The text leaves out amounts and payees unless the owner turns
+details on.
+
 ## Exchange rates
 
 Daily rates from the National Bank of Romania (`curs.bnr.ro`), fetched per year and only when

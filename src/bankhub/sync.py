@@ -273,16 +273,26 @@ def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
                     conn.execute("UPDATE accounts SET backfill_until=? WHERE id=?",
                                  (max(wanted.isoformat(), row["backfill_from"]), acc_id))
             conn.execute("UPDATE accounts SET recent_cursor=? WHERE id=?", (start.isoformat(), acc_id))
-    if fetch_forward(eb, account["uid"], start, today, cap, budget, save("recent_cursor", True)):
-        conn.execute("UPDATE accounts SET recent_until=?, recent_cursor=NULL WHERE id=?", (today.isoformat(), acc_id))
     row = state()
     if row["backfill_from"] is None:
         first = (today - timedelta(days=BACKFILL_DAYS)).isoformat()
         conn.execute("UPDATE accounts SET backfill_from=?, backfill_until=? WHERE id=?", (first, first, acc_id))
         row = state()
-    until, history = date.fromisoformat(row["backfill_until"]), date.fromisoformat(row["history_from"])
-    if until < history and budget[0] > 0:
-        fetch_forward(eb, account["uid"], until, history - timedelta(days=1), cap, budget, save("backfill_until", False))
+
+    def recent():
+        if fetch_forward(eb, account["uid"], start, today, cap, budget, save("recent_cursor", True)):
+            conn.execute("UPDATE accounts SET recent_until=?, recent_cursor=NULL WHERE id=?", (today.isoformat(), acc_id))
+
+    def older():
+        until, history = date.fromisoformat(state()["backfill_until"]), date.fromisoformat(state()["history_from"])
+        if until < history and budget[0] > 0:
+            fetch_forward(eb, account["uid"], until, history - timedelta(days=1), cap, budget, save("backfill_until", False))
+
+    # Right after a new consent the bank still answers for old dates without the customer; later it
+    # refuses them. So a fresh link spends its requests on older history first: the recent days are
+    # always available, and the next sync fetches them.
+    for step in ((older, recent) if backfill else (recent, older)):
+        step()
     return tuple(counts)
 
 

@@ -131,7 +131,11 @@ def test_windowed_bank_fetches_history_over_several_syncs(conn, key_path):
     eb = EnableBanking("app", key_path, transport=httpx.MockTransport(handler))
     sync.sync_account(conn, eb, acc(), backfill=True)
     assert len(asked) == sync.WINDOWED_REQUESTS_PER_RUN and count() > 0
-    assert asked[0] >= (today - td(days=sync.RECENT_DAYS)).isoformat()    # the recent part comes first
+    # A fresh link goes for old dates first (the bank only answers for them just after the consent).
+    assert asked[0] == (today - td(days=sync.BACKFILL_DAYS)).isoformat()
+    asked.clear()
+    sync.sync_account(conn, eb, acc(), backfill=False, force=True)
+    assert asked[0] >= (today - td(days=sync.RECENT_DAYS)).isoformat()    # afterwards, recent days first
     for _ in range(30):
         if sync.backfill_done(acc()):
             break

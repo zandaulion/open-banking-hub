@@ -1110,7 +1110,8 @@ function openRenameSheet(a, groups) {
 }
 
 function groupBody(g) {
-  return { name: g.name, behaviour: g.behaviour, category: g.category, subcategory: g.subcategory, money_back: g.money_back, sent_as: g.sent_as };
+  return { name: g.name, behaviour: g.behaviour, category: g.category, subcategory: g.subcategory, money_back: g.money_back,
+    sent_as: g.sent_as, payees: g.payees || [], ignored: g.ignored || [] };
 }
 
 const BEHAVIOUR = { supported: 'Someone I support', separate: 'Kept separate' };
@@ -1149,14 +1150,33 @@ async function openGroupSheet(g, accounts) {
     const elsewhere = a.group_id && (!g || a.group_id !== g.id) ? ` · now in ${d.groups.find((x) => x.id === a.group_id)?.name}` : '';
     return h('label', { class: 'toggle' }, box, ` ${a.name} `, h('span', { class: 'faint' }, `${a.institution} · ${a.currency}${elsewhere}`));
   });
+  // Payee names: found automatically or added by hand count for the group; an unticked one never does.
+  const key = (n) => n.toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+  const seen = new Map();
+  for (const f of (g ? g.found : [])) seen.set(key(f.name), { name: f.name, n: f.n, on: true });
+  for (const n of (g ? g.payees : [])) if (!seen.has(key(n))) seen.set(key(n), { name: n, n: 0, on: true });
+  for (const n of (g ? g.ignored : [])) seen.set(key(n), { name: n, n: 0, on: false });
+  const payeeBoxes = [...seen.values()].map((p) => {
+    const box = h('input', { type: 'checkbox', checked: p.on });
+    box.dataset.name = p.name;
+    return h('label', { class: 'toggle' }, box, ` ${p.name} `, h('span', { class: 'faint' }, p.n ? `${p.n} payment${p.n === 1 ? '' : 's'}` : p.on ? 'added by you' : 'not counted'));
+  });
+  const extra = h('input', { placeholder: 'Add a payee name, exactly as the bank shows it', maxlength: '80', autocomplete: 'off' });
   const msg = h('p', { class: 'muted', role: 'status' });
   const save = h('button', { class: 'btn primary' }, 'Save');
   let sheet;
   save.addEventListener('click', async () => {
     save.disabled = true; msg.textContent = 'Saving and recounting…';
+    const ticks = payeeBoxes.map((l) => l.querySelector('input'));
+    const found = new Set((g ? g.found : []).map((f) => key(f.name)));
+    // Names ticked that matching would not find on its own are kept as the owner's own list.
+    const payees = ticks.filter((x) => x.checked && !found.has(key(x.dataset.name))).map((x) => x.dataset.name);
+    if (extra.value.trim()) payees.push(extra.value.trim());
     const cat = picker.value();
     const body = { name: name.value, behaviour: behaviour.value, category: cat.category || 'family', subcategory: cat.subcategory,
       money_back: back.value, sent_as: behaviour.value === 'separate' ? sent.value : 'spending',
+      payees: [...new Set([...payees, ...(g ? g.payees : []).filter((n) => ticks.some((x) => x.checked && key(x.dataset.name) === key(n)))])],
+      ignored: ticks.filter((x) => !x.checked).map((x) => x.dataset.name),
       accounts: boxes.map((l) => l.querySelector('input')).filter((x) => x.checked).map((x) => x.dataset.alias) };
     try { await api(g ? `groups/${g.id}` : 'groups', { method: 'POST', body }); sheet.close(); refresh(); }
     catch (e) { msg.textContent = e.message; save.disabled = false; }
@@ -1173,7 +1193,9 @@ async function openGroupSheet(g, accounts) {
     h('label', { class: 'field' }, 'This is', behaviour,
       h('span', { class: 'faint', style: 'font-size:12px' }, 'Someone I support: a child or a parent, whose money comes from you. Kept separate: a business, or money you manage for someone.')),
     catField, backField, sentField,
-    h('p', { class: 'muted', style: 'margin:14px 0 0;font-size:13px' }, 'Accounts in this group'), ...boxes, msg,
+    h('p', { class: 'muted', style: 'margin:14px 0 0;font-size:13px' }, 'Accounts in this group'), ...boxes,
+    h('p', { class: 'muted', style: 'margin:14px 0 0;font-size:13px' }, 'Your payments to these names count for this group. Untick one that was matched by mistake.'),
+    ...payeeBoxes, h('label', { class: 'field' }, 'Add a name (e.g. a person with no linked account)', extra), msg,
     h('div', { class: 'actions' }, remove, h('button', { class: 'btn', onclick: () => sheet.close() }, 'Cancel'), save));
 }
 

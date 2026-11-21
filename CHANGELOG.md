@@ -2,9 +2,12 @@
 
 ## Unreleased
 
-- A payment no longer joins a group because its amount happened to match one on the group's account. A
-  matching amount counts for a named payee only when most payments to that name match; before, one chance
-  match could pull every payment to that person into the group, ahead of your own rule for them.
+- Groups are recognised more strictly. A card payment never joins a group because its amount matched one
+  on the group's account (a 5 RON ride the day a child got 5 RON), and a matching amount only teaches a
+  payee name when most transfers to that name match, twice at least. Payments are then assigned by name.
+- Each group lists the payee names it recognises, with how many payments each brought. Untick one that was
+  matched by mistake, or add a name by hand: a group can be just a person with no linked account (a
+  partner you send household money to), counted the way the group says.
 - BRD history now arrives in full. BRD returns at most 20 transactions per request, the oldest 20 of the
   range asked for, so each request starts where the last one stopped and is saved straight away. A few
   requests per sync fill in two years over several days, and a rate limit only pauses the work. Before,

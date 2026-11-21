@@ -94,7 +94,12 @@ def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> Transfer
             pairs.append((d["id"], c["id"], "amount_match", 0.7))
             internal.update((d["id"], c["id"]))
 
-    to_dep, from_dep = _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected)
+    chosen: dict[str, int] = {}
+    ignored: set[tuple[str, int]] = set()
+    for gid, payees, never in conn.execute("SELECT id, payees, ignored FROM account_groups"):
+        chosen.update({_norm(n): gid for n in json.loads(payees or "[]")})
+        ignored.update((_norm(n), gid) for n in json.loads(never or "[]"))
+    to_dep, from_dep = _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected, chosen, ignored)
 
     # Manual decisions win.
     for debit_id, credit_id in conn.execute("SELECT debit_id, credit_id FROM transfer_pairs WHERE confirmed=1 AND method='manual'"):
@@ -110,13 +115,14 @@ def _norm(name: str | None) -> str:
     return " ".join((name or "").lower().split())
 
 
-def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
+def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected, chosen=None, ignored=frozenset()):
     """Money between my accounts and a group's accounts (a child, a business...). Not own transfers:
     how they count depends on the group. Found by shared reference, the group account's IBAN, matching
     amounts, and then by the names seen in those. Returns {my transaction: group} for each direction."""
     to_dep: dict[int, int] = {}
     from_dep: dict[int, int] = {}
-    if not dependent:
+    chosen = chosen or {}
+    if not dependent and not chosen:
         return to_dep, from_dep
     by_id = {r["id"]: r for r in rows}
 
@@ -141,8 +147,9 @@ def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
     # A group's rows already paired (a move between its own pockets) are not candidates.
     paired = {i for d_id, c_id, _, _ in pairs for i in (d_id, c_id)}
     dep_rows = [r for r in rows if r["account_id"] in dependent and r["id"] not in paired]
+    # Only transfers to a named person: a card payment of the same amount is chance, never the group.
     own_rows = [r for r in rows if r["account_id"] not in dependent and r["id"] not in found()
-                and (r["id"] not in internal or r["counterparty_has_account"])]
+                and r["counterparty_has_account"] and r["counterparty_name"]]
     used: set[int] = set()
     hits = []
     for o in sorted(own_rows, key=lambda r: r["booking_date"]):
@@ -156,8 +163,8 @@ def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
             used.add(k["id"])
             hits.append((o, dependent[k["account_id"]], pair))
             break
-    # A matching amount can be chance (50 RON to someone else the day a child spent 50 RON). For a payee
-    # with a name, believe it only when most payments to that name match: then it is the group's account.
+    # A matching amount can still be chance (50 RON to someone else the day a child spent 50 RON), so it
+    # only teaches a name: one that most transfers to it match, twice at least. The name then decides.
     total: dict[str, int] = {}
     for r in rows:
         if r["account_id"] not in dependent and r["counterparty_has_account"] and r["counterparty_name"]:
@@ -169,20 +176,26 @@ def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
     trusted = {n for n, m in matched.items() if m >= 2 and 2 * m >= total[n]}
     strong = found()
     for o, group, pair in hits:
-        named = o["counterparty_has_account"] and o["counterparty_name"]
-        if not named or _norm(o["counterparty_name"]) in trusted:
+        if _norm(o["counterparty_name"]) in trusted and (_norm(o["counterparty_name"]), group) not in ignored:
             pairs.append((*pair, "dependent", 0.8))
             mark(o, group)
     # Names from reliable matches (e.g. "To KID EXAMPLE") cover the rest.
-    names: dict[str, int] = {}
+    # The owner's own list for each group comes first.
+    names: dict[str, int] = dict(chosen)
     for i in found():
         name = by_id[i]["counterparty_name"]
         if name and by_id[i]["counterparty_has_account"] and (i in strong or _norm(name) in trusted):
-            names.setdefault(_norm(name), to_dep.get(i) or from_dep.get(i))
+            group = to_dep.get(i) or from_dep.get(i)
+            if (_norm(name), group) not in ignored:
+                names.setdefault(_norm(name), group)
     for r in rows:
         if r["account_id"] not in dependent and r["id"] not in found() and r["counterparty_has_account"] \
                 and _norm(r["counterparty_name"]) in names:
             mark(r, names[_norm(r["counterparty_name"])])
+    # A name the owner took out of a group stays out, however it was found.
+    for d in (to_dep, from_dep):
+        for i in [i for i, g in d.items() if (_norm(by_id[i]["counterparty_name"]), g) in ignored]:
+            del d[i]
     return to_dep, from_dep
 
 

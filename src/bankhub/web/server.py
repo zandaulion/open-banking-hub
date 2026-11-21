@@ -144,6 +144,8 @@ class Group(BaseModel):
     money_back: str = "money_in"
     sent_as: str = "spending"
     accounts: list[str] | None = None
+    payees: list[str] = []
+    ignored: list[str] = []
 
 
 class OneOff(BaseModel):

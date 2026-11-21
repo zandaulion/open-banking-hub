@@ -287,3 +287,14 @@ def test_activity_filters_by_account(cfg):
     rows = app.get("/api/transactions", params={"account": "revolut_ron"}).json()
     assert rows["total"] == 2 and {t["account_alias"] for t in rows["transactions"]} == {"revolut_ron"}
     assert app.get("/api/transactions", params={"account": "nope"}).json()["total"] == 0
+
+
+def test_group_payee_names_round_trip(cfg):
+    app = _device(cfg)
+    body = {"name": "Partner", "behaviour": "supported", "category": "family", "subcategory": "household",
+            "accounts": [], "payees": ["Jane  Example", ""], "ignored": []}
+    assert app.post("/api/groups", json=body, headers=H).status_code == 200
+    g = app.get("/api/accounts").json()["groups"][0]
+    assert g["payees"] == ["Jane Example"]
+    assert [f["name"] for f in g["found"]] == ["Jane Example"]            # her transfer now counts for the group
+    assert _ids(app)["Jane Example"]["category"] == "family"

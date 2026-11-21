@@ -213,9 +213,19 @@ BEHAVIOURS = ("supported", "separate")
 
 
 def groups(conn: sqlite3.Connection) -> list[dict]:
-    return _rows(conn.execute(
+    out = _rows(conn.execute(
         """SELECT g.*, (SELECT json_group_array(alias) FROM accounts WHERE group_id = g.id) AS accounts
            FROM account_groups g ORDER BY g.name"""))
+    for g in out:
+        g["payees"], g["ignored"] = json.loads(g["payees"]), json.loads(g["ignored"])
+        # The names my payments to and from this group went to, however they were found (owner-only).
+        g["found"] = _rows(conn.execute(
+            """SELECT t.counterparty_name AS name, count(*) AS n FROM transaction_groups tg
+               JOIN transactions_raw t ON t.id = tg.raw_id JOIN accounts a ON a.id = t.account_id
+               WHERE tg.group_id = ? AND a.group_id IS NULL AND t.counterparty_has_account = 1
+                     AND t.counterparty_name IS NOT NULL
+               GROUP BY lower(t.counterparty_name) ORDER BY n DESC""", (g["id"],)))
+    return out
 
 
 def save_group(conn: sqlite3.Connection, group_id: int | None, body: dict) -> int:
@@ -239,6 +249,8 @@ def save_group(conn: sqlite3.Connection, group_id: int | None, body: dict) -> in
             raise LookupError(group_id)
     except sqlite3.IntegrityError:
         raise ValueError("Another group already has that name.")
+    names = lambda key: json.dumps(sorted({" ".join(n.split())[:80] for n in body.get(key) or [] if n.strip()}))
+    conn.execute("UPDATE account_groups SET payees=?, ignored=? WHERE id=?", (names("payees"), names("ignored"), group_id))
     if "accounts" in body:
         conn.execute("UPDATE accounts SET group_id = NULL WHERE group_id = ?", (group_id,))
         conn.executemany("UPDATE accounts SET group_id = ? WHERE alias = ?", [(group_id, a) for a in body["accounts"]])

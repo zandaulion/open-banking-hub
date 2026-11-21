@@ -667,21 +667,27 @@ async function renderRecurring() {
 // ---------------------------------------------------------------- activity
 async function renderTransactions(params) {
   setTitle('Activity');
-  const filters = { m: params.get('m') || '', category: params.get('category') || '', q: params.get('q') || '', kind: params.get('kind') || '' };
+  const filters = { m: params.get('m') || '', category: params.get('category') || '', q: params.get('q') || '', kind: params.get('kind') || '',
+    account: params.get('account') || '' };
   const search = h('input', { class: 'search', type: 'search', placeholder: 'Name, or amount: 38.68 · 38 · >500 · 100-200', value: filters.q, 'aria-label': 'Search' });
   let timer;
   search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => go('tx', { ...clean({ ...filters, q: search.value }) }, { replace: true }), 400); });
+  // Shows the alias until the first page brings the account's name.
+  const accountChip = filters.account ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: () => go('tx', clean({ ...filters, account: '' }), { replace: true }) }, `${filters.account} ✕`) : '';
   const chips = h('div', { class: 'chips' },
     filters.m ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: () => go('tx', clean({ ...filters, m: '' }), { replace: true }) }, `${monthLabel(filters.m)} ✕`) : '',
     filters.category ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: () => go('tx', clean({ ...filters, category: '' }), { replace: true }) }, `${pretty(filters.category)} ✕`) : '',
-    filters.kind ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: () => go('tx', clean({ ...filters, kind: '' }), { replace: true }) }, `${KINDS[filters.kind] || filters.kind} ✕`) : '');
+    filters.kind ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: () => go('tx', clean({ ...filters, kind: '' }), { replace: true }) }, `${KINDS[filters.kind] || filters.kind} ✕`) : '',
+    accountChip);
   const list = h('ul', { class: 'rows' });
   const more = h('button', { class: 'btn', style: 'width:100%;margin-top:10px' }, 'Load more');
   const count = h('p', { class: 'faint', style: 'margin:0 0 8px' });
   let offset = 0, lastDay = null;
   async function load() {
-    const q = new URLSearchParams(clean({ month: filters.m, category: filters.category, q: filters.q, kind: filters.kind, offset, limit: 60 }));
+    const q = new URLSearchParams(clean({ month: filters.m, category: filters.category, q: filters.q, kind: filters.kind,
+      account: filters.account, offset, limit: 60 }));
     const d = await api(`transactions?${q}`);
+    if (accountChip && d.transactions.length) accountChip.textContent = `${d.transactions[0].account_name || filters.account} ✕`;
     count.textContent = `${d.total} transaction${d.total === 1 ? '' : 's'}`;
     for (const t of d.transactions) {
       if (t.booking_date !== lastDay) { lastDay = t.booking_date; list.append(h('li', { class: 'daysep' }, dayLabel(t.booking_date))); }
@@ -1089,6 +1095,11 @@ function openRenameSheet(a, groups) {
   });
   sheet = sheetOpen(h('h2', {}, a.name),
     h('p', { class: 'muted', style: 'margin:4px 0 0' }, `${a.institution} · ${a.currency}${a.history_from ? ` · history from ${dayLabel(a.history_from)}` : ''}`),
+    h('button', { class: 'btn', style: 'margin-top:10px', onclick: () => {
+      // Closing steps back over the sheet's history entry; open Activity once that has happened.
+      addEventListener('popstate', () => go('tx', { account: a.alias }), { once: true });
+      sheet.close();
+    } }, 'See its payments'),
     h('label', { class: 'field' }, 'Name (leave empty for the default)', input),
     h('label', { class: 'field' }, 'This account is', group,
       h('span', { class: 'faint', style: 'font-size:12px' }, "Put someone else's accounts in a group (a child, a parent, a business), so their payments are not counted as yours.")), msg,

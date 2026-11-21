@@ -280,3 +280,10 @@ def test_groups_create_edit_and_remove(cfg):
     assert app.delete(f"/api/groups/{gid}", headers=H).status_code == 200
     assert app.get("/api/accounts").json()["groups"] == []
     assert "dependent" not in {t["kind"] for t in app.get("/api/transactions").json()["transactions"]}
+
+
+def test_activity_filters_by_account(cfg):
+    app = _device(cfg)
+    rows = app.get("/api/transactions", params={"account": "revolut_ron"}).json()
+    assert rows["total"] == 2 and {t["account_alias"] for t in rows["transactions"]} == {"revolut_ron"}
+    assert app.get("/api/transactions", params={"account": "nope"}).json()["total"] == 0

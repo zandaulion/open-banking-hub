@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Activity can show one account: tap an account on Accounts, then **See its payments**. The account
+  shows as a chip that combines with search, month and category; own transfers stay in the list.
+
 ## 0.4.0 (2026-11-21)
 
 - Account groups, for money that isn't yours: a child's or a parent's accounts, a business, an account

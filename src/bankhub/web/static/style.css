@@ -198,3 +198,7 @@ main#view { touch-action: pan-y; will-change: transform; }
   display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px;
   border-radius: 12px; background: var(--surface-2); color: var(--text-secondary); font-size: 14px; }
 .offline-bar .chip { min-height: 30px; padding: 4px 12px; }
+
+/* CSV import preview */
+.csv-preview { display: block; max-width: 100%; overflow-x: auto; font-size: 11px; border-collapse: collapse; margin-bottom: 8px; }
+.csv-preview td { border-bottom: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }

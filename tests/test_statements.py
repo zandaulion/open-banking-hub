@@ -127,3 +127,16 @@ def test_current_account_statement_fills_gaps_once_and_the_sync_replaces_it(conn
 def test_a_statement_for_an_account_that_is_not_linked_is_refused(conn):
     with pytest.raises(StatementError, match="not linked"):
         statements.store(conn, parse_statement(account_statement(MAIN_IBAN)))
+
+
+from reader_conformance import check_reader
+
+
+def test_the_brd_readers_follow_the_reader_convention():
+    check_reader("brd-card", statement(MAIN_IBAN), statement(MAIN_IBAN, used_extra=100))
+    check_reader("brd-account", account_statement(MAIN_IBAN), account_statement(MAIN_IBAN, extra_debit=100))
+
+
+def test_unknown_statements_say_what_is_supported():
+    with pytest.raises(StatementError, match="BRD current account.*CSV"):
+        parse_statement("Some other bank's statement")

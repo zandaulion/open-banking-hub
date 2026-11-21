@@ -23,6 +23,8 @@ README alone, and never expose the app to the public internet.
 - Amounts are integer minor units in the raw layer; reports use RON at the BNR rate.
 - Schema changes are new files in `src/bankhub/migrations/`; they run on open (the web app opens the
   database read-write once at start for this). Add a test that opens a database in the old shape.
+- Statement readers (PDF, CSV) live in `src/bankhub/statements/`; a new bank follows the convention in
+  `CONTRIBUTING.md` and is tested with `tests/reader_conformance.py`.
 - After changing a bank reader in `normalize.py`, `bankhub renormalize` re-reads stored payloads.
 - PWA text is built with `textContent` only (bank data is untrusted); styles go through CSSOM because of
   the CSP.

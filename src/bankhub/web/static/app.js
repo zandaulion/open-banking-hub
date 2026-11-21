@@ -1232,6 +1232,102 @@ function statementPicker(onDone, label = 'Add a statement (PDF)') {
   return h('div', {}, btn, input, msg);
 }
 
+// A CSV from any bank: choose the account and the file, confirm which column is which (guessed, and remembered per
+// account), and only the payments the account does not have yet are added.
+const CSV_DATES = [['%d/%m/%Y', '31/12/2026'], ['%d.%m.%Y', '31.12.2026'], ['%Y-%m-%d', '2026-12-31'], ['%d-%m-%Y', '31-12-2026'],
+  ['%m/%d/%Y', '12/31/2026 (month first)'], ['%d/%m/%y', '31/12/26'], ['%d.%m.%y', '31.12.26'], ['%Y/%m/%d', '2026/12/31']];
+const CSV_DELIMITERS = [[',', 'comma ,'], [';', 'semicolon ;'], ['\t', 'tab'], ['|', 'bar |']];
+
+async function readTextFile(file) {
+  const buf = await file.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return new TextDecoder('windows-1252').decode(buf); }
+}
+
+function openCsvSheet(accounts) {
+  let sheet, text = '', info = null, current = null;
+  const account = h('select', {}, accounts.map((a) => h('option', { value: a.alias }, `${a.name} · ${a.institution} · ${a.currency}`)));
+  const input = h('input', { type: 'file', accept: '.csv,.txt,text/csv,text/plain' });
+  const mapping = h('div');
+  const msg = h('p', { class: 'muted', role: 'status' });
+  const go_ = h('button', { class: 'btn primary', disabled: true }, 'Import');
+
+  async function preview(delimiter) {
+    msg.textContent = '';
+    try {
+      info = await api('statements/csv/preview', { method: 'POST', body: { account: account.value, csv: text, delimiter: delimiter || null } });
+      const saved = info.saved && info.saved.delimiter === info.delimiter ? info.saved : null;
+      render(saved || info.guess);
+      go_.disabled = false;
+    } catch (e) { mapping.replaceChildren(); go_.disabled = true; msg.textContent = e.message; }
+  }
+
+  function render(m) {
+    const first = info.rows[Math.min(m.skip || 0, info.rows.length - 1)] || [];
+    const sample = (i) => (first[i] || '').slice(0, 18);
+    const cols = (value, optional) => {
+      const sel = h('select', {}, optional ? h('option', { value: '' }, '—') : '',
+        Array.from({ length: info.columns }, (_, i) => h('option', { value: String(i), selected: value === i }, `Column ${i + 1}: ${sample(i)}`)));
+      return sel;
+    };
+    const pick = {
+      date: cols(m.date, false), value_date: cols(m.value_date, true), description: cols(m.description, true),
+      counterparty: cols(m.counterparty, true), iban: cols(m.iban, true), amount: cols(m.amount, true),
+      debit: cols(m.debit, true), credit: cols(m.credit, true),
+    };
+    const split = h('select', {}, h('option', { value: 'one', selected: m.amount !== null }, 'One signed amount column'),
+      h('option', { value: 'two', selected: m.amount === null }, 'Separate debit and credit columns'));
+    const delimiter = h('select', {}, CSV_DELIMITERS.map(([v, l]) => h('option', { value: v, selected: v === info.delimiter }, l)));
+    const skip = h('input', { type: 'number', min: '0', max: '50', value: String(m.skip ?? 0) });
+    const dateFormat = h('select', {}, CSV_DATES.map(([v, l]) => h('option', { value: v, selected: v === m.date_format }, l)));
+    const decimal = h('select', {}, h('option', { value: '.', selected: m.decimal === '.' }, '1,234.56 (point)'),
+      h('option', { value: ',', selected: m.decimal === ',' }, '1.234,56 (comma)'));
+    const invert = h('input', { type: 'checkbox', checked: !!m.invert });
+    const oneOrTwo = h('div');
+    const field = (label, el) => h('label', { class: 'field' }, label, el);
+    const draw = () => oneOrTwo.replaceChildren(...(split.value === 'one'
+      ? [field('Amount', pick.amount)] : [field('Money out (debit)', pick.debit), field('Money in (credit)', pick.credit)]));
+    split.addEventListener('change', draw); draw();
+    delimiter.addEventListener('change', () => preview(delimiter.value));
+    const num = (el) => (el.value === '' ? null : Number(el.value));
+    current = () => ({
+      delimiter: delimiter.value, skip: Number(skip.value) || 0, date: num(pick.date), value_date: num(pick.value_date),
+      date_format: dateFormat.value, description: num(pick.description), counterparty: num(pick.counterparty), iban: num(pick.iban),
+      amount: split.value === 'one' ? num(pick.amount) : null, debit: split.value === 'two' ? num(pick.debit) : null,
+      credit: split.value === 'two' ? num(pick.credit) : null, decimal: decimal.value, invert: invert.checked,
+    });
+    mapping.replaceChildren(
+      h('p', { class: 'faint', style: 'margin:10px 0 4px;font-size:13px' }, `${info.total_rows} rows. The first ones:`),
+      h('table', { class: 'csv-preview' }, info.rows.map((r) => h('tr', {}, r.map((c) => h('td', {}, c))))),
+      field('Rows to skip at the top (headings)', skip), field('Delimiter', delimiter),
+      field('Date', pick.date), field('Date format', dateFormat), field('Description', pick.description),
+      field('Counterparty (optional)', pick.counterparty), field('Counterparty IBAN (optional)', pick.iban),
+      field('Amounts', split), oneOrTwo, field('Number format', decimal),
+      h('label', { class: 'toggle' }, invert, ' Money out is positive in this file (flip the sign)'));
+  }
+
+  input.addEventListener('change', async () => {
+    if (!input.files.length) return;
+    text = await readTextFile(input.files[0]);
+    await preview(null);
+  });
+  account.addEventListener('change', () => { if (text) preview(null); });
+  go_.addEventListener('click', async () => {
+    go_.disabled = true; msg.textContent = 'Reading…';
+    try {
+      const r = await api('statements/csv', { method: 'POST', body: { account: account.value, csv: text, mapping: current(), rebuild_after: true } });
+      msg.textContent = `${r.account}, ${dayLabel(r.period_start)} to ${dayLabel(r.period_end)}: ${r.new} new, ${r.already_had} already there.${r.warnings.length ? ' ' + r.warnings.join(' ') : ''}`;
+      setTimeout(() => { sheet.close(); refresh(); }, 3500);
+    } catch (e) { msg.textContent = e.message; go_.disabled = false; }
+  });
+  sheet = sheetOpen(h('h2', {}, 'Import a CSV'),
+    h('p', { class: 'muted', style: 'margin:4px 0 0;font-size:13px' },
+      "From your bank's website or app. Only payments the account does not have yet are added. The file is not kept; the column choices are, for the next one."),
+    field_('Account', account), field_('File', input), mapping, msg,
+    h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => sheet.close() }, 'Cancel'), go_));
+}
+const field_ = (label, el) => h('label', { class: 'field' }, label, el);
+
 function openCardSheet(c) {
   let sheet;
   const used = c.limit_ron ? Math.min(100, (c.owed_ron / c.limit_ron) * 100) : 0;
@@ -1298,10 +1394,13 @@ async function renderAccounts(params) {
         h('div', { class: 'row-sub' }, h('span', {}, c.due_date ? `Due ${dayLabel(c.due_date)}${c.min_due_ron ? ` · min ${ron(c.min_due_ron)}` : ''}` : `Up to ${dayLabel(c.period_end)}`),
           h('span', {}, c.limit_ron ? `${ron(c.available_ron)} available` : '')))))),
     h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, 'Owed on a card is not part of your total above.')) : '';
+  const csvAccounts = b.accounts.filter((a) => a.role !== 'card');
   const statementCard = h('section', { class: 'card' }, h('h2', {}, 'Add a statement'),
     h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' },
-      "Add a monthly statement (PDF) from your bank's app. A current account gets the payments the sync has not fetched yet; a credit card, which banks don't share, is added from its statements, once a month. The app reads the file here and keeps only the payments, not the PDF. BRD for now."),
-    statementPicker(() => refresh(), 'Add statements (PDF)'));
+      "Add a monthly statement (PDF) from your bank's app: BRD current accounts and credit cards, which banks often don't share, are read directly. For any other bank, import a CSV and say which column is which. Only payments the account does not have yet are added, and the file itself is not kept."),
+    statementPicker(() => refresh(), 'Add statements (PDF)'),
+    h('p', { style: 'margin:10px 0 0' }, h('button', { class: 'btn', disabled: !!state.offline || !csvAccounts.length,
+      onclick: () => openCsvSheet(csvAccounts) }, 'Import a CSV (any bank)')));
 
   const syncBtn = h('button', { class: 'btn', disabled: !!state.offline }, state.offline ? 'Sync needs the server' : 'Sync now');
   const syncMsg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });

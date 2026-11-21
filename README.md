@@ -165,6 +165,9 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
   history goes, when backups last ran) and **notifications** for this phone: a large payment, a low
   balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that
   stopped. By default notifications say what happened, without amounts or payees on the lock screen.
+- **Statements**: add a monthly statement (PDF) or a CSV from any bank. A credit card that open banking
+  does not share is read from its statements, and an account's history fills in at once instead of over days
+  (see [docs/BANKS.md](docs/BANKS.md#statements)).
 - **Offline**: every screen keeps a copy on the phone, and on Wi-Fi the app saves all months,
   Recurring, Accounts and recent payments ahead of time. Without the server it shows that copy, with a
   banner saying when it was saved; changes wait for the server. Copies older than 14 days are deleted,

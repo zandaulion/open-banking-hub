@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- CSV import for any bank: Accounts → Add a statement → Import a CSV. Choose the account and the file;
+  the delimiter, date format, number format and columns are guessed, and confirmed once (remembered for
+  the account). Only payments the account does not have yet are added, like a PDF statement.
+- Statement readers are pluggable: each bank's reader registers itself (`src/bankhub/statements/`), and
+  CONTRIBUTING.md describes the convention (detect narrowly, signed minor units and ISO dates, check the
+  lines against the statement's totals, errors that never quote the file). `tests/reader_conformance.py`
+  checks it; the BRD readers follow it.
 - A payment the bank itself labels (interest, tax, a fee, cash, payroll) is never matched by amount to a
   credit elsewhere as a move between your accounts: a 14.24 RON interest charge had been paired with a
   14.14 RON Revolut top-up the next day.

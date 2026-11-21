@@ -65,24 +65,32 @@ rules. These are the banks Bank Hub was built against, and what it does about ea
 
 ## Statements
 
-Add a monthly statement (PDF) on **Accounts → Add a statement**; several files at once work. The kind is
-recognised from the file. Bank Hub reads PDFs with `pdftotext` (poppler-utils; the Docker image has it)
-and keeps only what it reads, never the PDF with the holder's name and address. Adding a statement twice
-changes nothing.
+Add a monthly statement on **Accounts → Add a statement**. Nothing about the file is kept: only the
+payments it holds, and for a card what is owed and when. Adding the same statement twice changes nothing.
 
-- **BRD current account:** adds the payments the account does not have yet, so history the sync has not
-  reached (BRD hands it out slowly) is there at once. A payment the sync already fetched (same amount, within two
-  days) is left alone, and when the sync reaches a period a statement filled in, the bank's own records
-  replace the statement's lines, so nothing is counted twice. The statement's IBAN must belong to a linked
-  account. The lines must add up to its totals and opening and closing balance, or the app says so.
+- **A CSV from any bank** (**Import a CSV**): choose the account and the file, and confirm which column
+  is the date, the amount (one signed column, or separate debit and credit columns), the description and,
+  if there is one, the counterparty and its IBAN. The delimiter, header rows, date format and number
+  format are guessed and can be changed. The choice is remembered for the account, so the next file needs
+  no setup. Rows that cannot be read are counted and said so; a file where most rows fail is refused.
+- **A PDF** (several at once work): the kind is recognised from the file. The readers that exist are listed
+  below; adding one for another bank is described in [CONTRIBUTING.md](../CONTRIBUTING.md). Bank Hub reads
+  PDFs with `pdftotext` (poppler-utils; the Docker image has it).
+
+For a current account, only payments the account does not have yet are added. A payment the sync already
+fetched (same amount, within two days) is left alone, and when the sync reaches a period a statement filled
+in, the bank's own records replace the statement's lines, so nothing is counted twice. The account's
+history, categories and transfers then work as for any synced account.
+
+- **BRD current account (PDF):** the statement's IBAN must belong to a linked account. The lines must add
+  up to its totals and its opening and closing balance, or the app says so. Payroll credits ("Alim.
+  conventie") are income.
 
 ### Credit cards
 
 For a card a bank does not share, the statements are the only source: the card shows under **Accounts →
-Credit cards**. Bank Hub reads the PDF with `pdftotext`
-(poppler-utils; the Docker image has it) and keeps only what it reads: the payments, what is owed,
-the limit, the due date and the instalment plans. The PDF itself, with the cardholder's name and
-address, is not stored. Adding a statement twice changes nothing.
+Credit cards**. Bank Hub keeps the payments, what is owed, the limit, the due date and the instalment
+plans, not the PDF with the cardholder's name and address.
 
 - **BRD credit card:** purchases get categories like any card payment. A repayment from one of your
   accounts is a transfer between your own accounts (the statement names the paying IBAN). A purchase turned into

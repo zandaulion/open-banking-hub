@@ -10,6 +10,7 @@ do the same from the terminal.
 import asyncio
 import hashlib
 import hmac
+import json
 import os
 import re
 import threading
@@ -30,8 +31,9 @@ from pydantic import BaseModel
 
 from .. import fx, ledger, sync
 from ..config import Config, _read_env_file, load_config
-from ..db import connect, connect_readonly, transaction
+from ..db import connect, connect_readonly, transaction, utcnow
 from .. import statements
+from ..statements import csv_import
 from ..enablebanking import EnableBanking
 from ..rules import load_rules
 from . import data, rules_edit
@@ -148,6 +150,14 @@ class Group(BaseModel):
     accounts: list[str] | None = None
     payees: list[str] = []
     ignored: list[str] = []
+
+
+class CsvBody(BaseModel):
+    account: str
+    csv: str
+    delimiter: str | None = None
+    mapping: dict | None = None
+    rebuild_after: bool = True
 
 
 class OneOff(BaseModel):
@@ -361,6 +371,48 @@ def create_app(cfg: WebConfig) -> FastAPI:
         except statements.StatementError as e:
             raise HTTPException(400, str(e))
         if rebuild_after:
+            result["rebuilt"] = rebuild()
+        return result
+
+    def _csv_account(conn, alias: str):
+        acc = conn.execute("SELECT id, alias, institution, currency, coalesce(display_name, alias) AS name FROM accounts"
+                           " WHERE alias = ? AND source = 'bank' AND active = 1", (alias,)).fetchone()
+        if not acc:
+            raise HTTPException(404, "That account is not linked.")
+        return acc
+
+    @app.post("/api/statements/csv/preview")
+    def csv_preview(body: CsvBody, dev: dict = Depends(device)):
+        """What a CSV looks like, and the column mapping to start from (the one saved for the account, if any)."""
+        try:
+            result = csv_import.sniff(body.csv, body.delimiter)
+        except statements.StatementError as e:
+            raise HTTPException(400, str(e))
+        with ro() as conn:
+            acc = _csv_account(conn, body.account)
+            saved = conn.execute("SELECT mapping FROM statement_formats WHERE account_id = ?", (acc["id"],)).fetchone()
+        result["saved"] = json.loads(saved[0]) if saved else None
+        return result
+
+    @app.post("/api/statements/csv")
+    def csv_add(body: CsvBody, dev: dict = Depends(device)):
+        """Adds the rows of a CSV the account does not have yet, with the mapping the owner confirmed."""
+        if len(body.csv) > csv_import.MAX_CSV_CHARS:
+            raise HTTPException(413, "That file is too large.")
+        try:
+            with write_lock, closing(connect(cfg.core.db_path)) as conn:
+                acc = _csv_account(conn, body.account)
+                mapping = csv_import.clean_mapping(body.mapping or {})
+                st = csv_import.statement_from_csv(body.csv, mapping, bank=acc["institution"], alias=acc["alias"],
+                                                   currency=acc["currency"])
+                result = statements.store(conn, st)
+                with transaction(conn):
+                    conn.execute("INSERT INTO statement_formats(account_id, mapping, updated_at) VALUES (?,?,?)"
+                                 " ON CONFLICT(account_id) DO UPDATE SET mapping=excluded.mapping, updated_at=excluded.updated_at",
+                                 (acc["id"], json.dumps(mapping), utcnow()))
+        except statements.StatementError as e:
+            raise HTTPException(400, str(e))
+        if body.rebuild_after:
             result["rebuilt"] = rebuild()
         return result
 

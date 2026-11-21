@@ -230,8 +230,11 @@ def test_app_start_applies_pending_migrations(tmp_path):
     core = Config(data_dir=tmp_path, app_id=None, key_path=tmp_path / "k.pem",
                   redirect_url="https://enablebanking.com/", country="RO")
     create_app(WebConfig(core=core, admin_token=TOKEN, base_url="http://testserver", cookie_path="/", port=0, admin_port=0))
-    cols = [r[1] for r in _sq.connect(db).execute("PRAGMA table_info(accounts)")]
-    assert "display_name" in cols
+    new = _sq.connect(db)
+    cols = [r[1] for r in new.execute("PRAGMA table_info(accounts)")]
+    assert {"display_name", "group_id", "source", "backfill_until"} <= set(cols)
+    tables = {r[0] for r in new.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"account_groups", "card_statements", "card_plans", "statement_formats"} <= tables
 
 
 def test_suggestions_keep_the_product():
@@ -316,3 +319,19 @@ def test_statement_upload_shows_a_card_and_refuses_junk(cfg, monkeypatch):
     assert (card["owed_ron"], card["limit_ron"], card["due_date"], len(card["plans"])) == (9849.84, 10000.0, "2026-11-19", 2)
     assert d["balances"]["card_owed_ron"] == 9849.84
     assert d["health"]["statements"][0]["period_end"] == "2026-10-25"
+
+
+def test_csv_preview_and_import_remember_the_mapping(cfg):
+    app = _device(cfg)
+    csv = "Date,Description,Debit,Credit\n2026-10-01,Coffee,3.50,\n2026-10-02,Salary,,2000.00\n2026-10-03,Rent,800.00,\n"
+    pre = app.post("/api/statements/csv/preview", json={"account": "revolut_ron", "csv": csv}, headers=H).json()
+    assert pre["guess"]["debit"] == 2 and pre["guess"]["credit"] == 3 and pre["saved"] is None
+    assert app.post("/api/statements/csv/preview", json={"account": "nope", "csv": csv}, headers=H).status_code == 404
+    r = app.post("/api/statements/csv", json={"account": "revolut_ron", "csv": csv, "mapping": pre["guess"]}, headers=H)
+    assert r.status_code == 200 and r.json()["new"] == 3 and r.json()["account"]
+    again = app.post("/api/statements/csv", json={"account": "revolut_ron", "csv": csv, "mapping": pre["guess"]}, headers=H).json()
+    assert again["new"] == 0 and again["already_had"] == 3
+    assert app.post("/api/statements/csv/preview", json={"account": "revolut_ron", "csv": csv}, headers=H).json()["saved"]["debit"] == 2
+    bad = app.post("/api/statements/csv", json={"account": "revolut_ron", "csv": csv, "mapping": {**pre["guess"], "date": None}}, headers=H)
+    assert bad.status_code == 400
+    assert app.post("/api/statements/csv", json={"account": "revolut_ron", "csv": csv, "mapping": pre["guess"]}).status_code == 403

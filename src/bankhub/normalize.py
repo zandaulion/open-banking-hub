@@ -101,7 +101,9 @@ def normalize(tx: dict, institution: str | None = None) -> NormalizedTx:
     code = (tx.get("bank_transaction_code") or {})
     bank_code = code.get("description") or code.get("code") or None
     brd = _brd(tx, is_debit) if institution == "BRD" else None
-    if institution == "ING":
+    # A line added from a statement names its counterparty itself; ING's description layout is the API's.
+    from_statement = (tx.get("entry_reference") or "").startswith("stmt-")
+    if institution == "ING" and not from_statement:
         name, iban, has_account, remittance = _ing(tx, is_debit, ", ".join(tx.get("remittance_information") or []))
     elif brd:
         name, iban, has_account, remittance, bank_code = brd   # BRD's code field holds only a BIC

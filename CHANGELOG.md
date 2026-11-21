@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-21)
 
 - Account groups, for money that isn't yours: a child's or a parent's accounts, a business, an account
   you manage for someone. Create one on Accounts, put accounts in it, and choose how it counts:

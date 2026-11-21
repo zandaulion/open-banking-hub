@@ -561,9 +561,8 @@ async function renderMonth(params) {
     legend,
     scrollChart(d.trend.map((t) => ({ ...t, on: t.month === m, short: monthShort(t.month)[0],
       tip: [`${monthLabel(t.month)}${t.partial ? (t.month === thisMonth() ? ' (so far)' : ' (history starts mid-month)') : ''}`,
-            hasIncome && t.income_ron > 0 ? `income ${ron(t.income_ron)}` : null, `spent ${ron(t.outflow_ron)}`,
-            hasIncome && t.income_ron > 0 ? (t.outflow_ron > t.income_ron ? `over by ${ron(t.outflow_ron - t.income_ron)}` : `left ${ron(t.income_ron - t.outflow_ron)}`) : null,
-            hasIncome && !(t.income_ron > 0) ? 'no income known' : null,
+            hasIncome ? `income ${ron(t.income_ron)}` : null, `spent ${ron(t.outflow_ron)}`,
+            hasIncome ? (t.outflow_ron > t.income_ron ? `over by ${ron(t.outflow_ron - t.income_ron)}` : `left ${ron(t.income_ron - t.outflow_ron)}`) : null,
             t.one_off_out_ron ? `one-off out ${ron(t.one_off_out_ron)}` : null,
             t.one_off_in_ron ? `one-off in ${ron(t.one_off_in_ron)}` : null].filter(Boolean).join(' · ') })),
       { id: 'month-trend', label: 'Income and spending per month', dimOthers: false, band: false,
@@ -578,9 +577,8 @@ async function renderMonth(params) {
         labelOf: (p) => (p.one_off_out_ron ? `+${k(p.one_off_out_ron)}` : p.one_off_in_ron ? `↓${k(p.one_off_in_ron)}` : ''),
         draw: (svg, p, g) => {
           const dash = p.partial ? ' partial' : '';
-          // A month with no income known (before the account that receives it was added) is just spending:
-          // comparing it with nothing would make the whole bar look overspent.
-          const known = hasIncome && p.income_ron > 0;
+          // A month with no income in the app is shown as it is: everything spent is over income.
+          const known = hasIncome;
           const inc = known ? g.scale(p.income_ron) : 0, sp = g.scale(p.outflow_ron);
           const within = known ? Math.min(sp, inc) : sp;
           if (known && inc > sp) svg.append(s('path', { d: barPath(g.x, g.base - inc, g.bw, inc - sp, 4), class: 'bar left' + dash }));

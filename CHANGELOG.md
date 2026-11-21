@@ -5,8 +5,7 @@
 - Month chart: the selected month is outlined, with no band behind it and no dimming of the others, so a
   month keeps the same colours whether or not it is selected. Income you did not spend is a hatched green
   "left over" segment (the mirror of the red "over income", and hatched so colour alone is not what tells
-  them apart). A month with no income known, such as one before the account your salary arrives in was
-  added, is plain blue instead of entirely red.
+  them apart). A month with no income in the app shows everything spent as over income, like the cards above it.
 - CSV import for any bank: Accounts → Add a statement → Import a CSV. Choose the account and the file;
   the delimiter, date format, number format and columns are guessed, and confirmed once (remembered for
   the account). Only payments the account does not have yet are added, like a PDF statement.

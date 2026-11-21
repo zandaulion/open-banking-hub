@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A payment the bank itself labels (interest, tax, a fee, cash, payroll) is never matched by amount to a
+  credit elsewhere as a move between your accounts: a 14.24 RON interest charge had been paired with a
+  14.14 RON Revolut top-up the next day.
 - Current account statements: a debit BRD prints two columns right of its usual place (some months, for some
   lines) was read as a credit, so a loan instalment showed as income. Credits are now told apart by how far
   right they sit, and the totals check catches any line that is still misplaced.

@@ -280,3 +280,15 @@ def test_owner_names_decide_for_a_group(conn, rules):
     conn.execute("UPDATE account_groups SET ignored='[\"partner example\"]'")
     ledger.rebuild(conn, rules, today=date(2026, 11, 5))
     assert cat(-300.0)["category"] != "family"
+
+
+def test_a_bank_labelled_charge_is_not_matched_to_a_similar_credit(conn, rules):
+    sync.register_session(conn, session("BRD", [("brd", "RON", "CACC")]))
+    sync.register_session(conn, session("Revolut", [("rev", "RON", "CACC")], session_id="sess-2"))
+    store(conn, "brd", [tx("14.24", "2026-09-30", text="Plata dobanda limita credit|Automat|OP 123|Dl Example")])
+    store(conn, "rev", [tx("14.14", "2026-10-01", debit=False, text="Payment from a friend")])
+    store(conn, "brd", [tx("500", "2026-10-05", text="Utilizare POS comerciant|Card/Terminale|OP 1|Card nr....1234|Shop")])
+    store(conn, "rev", [tx("500", "2026-10-06", debit=False, text="From someone")])      # an unlabelled pair still matches
+    ledger.rebuild(conn, rules, today=date(2026, 11, 5))
+    rows = {(r["account_alias"], abs(r["amount"])): r["is_internal_transfer"] for r in conn.execute("SELECT * FROM transactions_clean")}
+    assert rows[("brd_ron", 14.24)] == 0 and rows[("revolut_ron", 14.14)] == 0

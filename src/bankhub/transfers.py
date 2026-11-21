@@ -66,7 +66,13 @@ def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> Transfer
             internal.add(r["id"])
 
     # 3. Amount matching across institutions (e.g. ING -> Revolut top-up).
-    candidates = [r for r in rows if r["id"] not in internal]
+    # A payment the bank itself labels as interest, tax, a fee, cash or payroll is never a move between my accounts,
+    # even when a credit of about the same size turns up elsewhere the next day.
+    def named_by_bank(r) -> bool:
+        rule = rules.match_bank_code(r["bank_code"], r["amount_minor"] < 0)
+        return bool(rule and rule.category)
+
+    candidates = [r for r in rows if r["id"] not in internal and not named_by_bank(r)]
     debits = [r for r in candidates if r["amount_minor"] < 0]
     credits = [r for r in candidates if r["amount_minor"] > 0]
     used: set[int] = set()

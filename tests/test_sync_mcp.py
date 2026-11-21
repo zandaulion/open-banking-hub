@@ -182,3 +182,55 @@ def test_backup_snapshot_is_consistent_and_rotated(conn, tmp_path):
     assert copy.execute("SELECT count(*) FROM accounts").fetchone()[0] == 1
     assert oct((snaps[-1] / "bankhub.db").stat().st_mode & 0o777) == "0o600"
     assert backup.latest(tmp_path) == snaps[-1]
+
+
+def test_windowed_bank_fetches_the_current_month_before_an_older_gap(conn, key_path):
+    """A BRD account weeks behind: this month's payments come first, the gap before it after."""
+    from datetime import date as d, timedelta as td
+    today = d.today()
+    all_txs = [tx("10", (today - td(days=i)).isoformat(), ref=f"g{i}") for i in range(0, 80)]   # one a day
+    asked = []
+
+    def handler(request: httpx.Request):
+        if request.url.path.endswith("/balances"):
+            return httpx.Response(200, json={"balances": []})
+        a, b = request.url.params["date_from"], request.url.params["date_to"]
+        asked.append(a)
+        inside = sorted((t for t in all_txs if a <= t["booking_date"] <= b), key=lambda t: t["booking_date"])
+        return httpx.Response(200, json={"transactions": inside[:20]})
+
+    sync.register_session(conn, session("BRD", [("brd-ron", "RON", "CACC")]))
+    gap_from = (today - td(days=60)).isoformat()
+    conn.execute("UPDATE accounts SET backfilled_at='2026-01-01', history_from=?, recent_cursor=?, backfill_from=?, backfill_until=?",
+                 (gap_from, gap_from, "2000-01-01", gap_from))
+    acc = lambda: conn.execute("SELECT * FROM accounts").fetchone()
+    eb = EnableBanking("app", key_path, transport=httpx.MockTransport(handler))
+    sync.sync_account(conn, eb, acc(), backfill=False, force=True)
+    month_start = today.replace(day=1) - td(days=sync.OVERLAP_DAYS)
+    assert asked[0] == month_start.isoformat()                                   # the current month first
+    have = {r[0] for r in conn.execute("SELECT booking_date FROM transactions_raw")}
+    assert today.isoformat() in have or len([x for x in all_txs if x["booking_date"] >= month_start.isoformat()]) > 40
+    for _ in range(10):
+        sync.sync_account(conn, eb, acc(), backfill=False, force=True)
+    assert acc()["recent_cursor"] is None and conn.execute("SELECT count(*) FROM transactions_raw").fetchone()[0] == 61
+
+
+def test_a_rate_limit_after_some_progress_is_not_a_skipped_sync(conn, key_path):
+    from datetime import date as d, timedelta as td
+    today = d.today()
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request):
+        if request.url.path.endswith("/balances"):
+            return httpx.Response(200, json={"balances": []})
+        calls["n"] += 1
+        if calls["n"] > 1:
+            return httpx.Response(429, json={"error": "ASPSP_RATE_LIMIT_EXCEEDED"})
+        return httpx.Response(200, json={"transactions": [tx("5", today.isoformat(), ref="now")]})
+
+    sync.register_session(conn, session("BRD", [("brd-ron", "RON", "CACC")]))
+    gap = (today - td(days=60)).isoformat()
+    conn.execute("UPDATE accounts SET backfilled_at='2026-01-01', history_from=?, recent_cursor=?, backfill_from=?, backfill_until=?",
+                 (gap, gap, "2000-01-01", gap))
+    result = sync.sync_all(conn, EnableBanking("app", key_path, transport=httpx.MockTransport(handler)))
+    assert result.accounts[0].skipped is None and result.accounts[0].new == 1

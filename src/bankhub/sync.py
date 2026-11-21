@@ -252,8 +252,8 @@ def sync_account(conn: sqlite3.Connection, eb: EnableBanking, account: sqlite3.R
 
 
 def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
-    """Recent transactions first, then older history going forward from two years back, a few requests
-    per sync. Every answer is saved with how far it got, so a rate limit or the request budget only
+    """The current month first, then the recent days before it, then older history going forward from two
+    years back, a few requests per sync. Every answer is saved with how far it got, so a rate limit or the request budget only
     pauses the work until the next sync."""
     today = date.today()
     counts = [0, 0]
@@ -267,8 +267,11 @@ def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
     def save(column, recent):
         def _save(txs, complete_until):
             with transaction(conn):
-                counts[1] += _store_transactions(conn, acc_id, txs, prune_pending=recent)
-                conn.execute(f"UPDATE accounts SET {column}=? WHERE id=?", (complete_until.isoformat(), acc_id))
+                # Pending payments not returned again have settled or gone; only an answer that reaches today
+                # can tell (an earlier slice of the month simply does not include them).
+                counts[1] += _store_transactions(conn, acc_id, txs, prune_pending=recent and complete_until > today)
+                if column:
+                    conn.execute(f"UPDATE accounts SET {column}=? WHERE id=?", (complete_until.isoformat(), acc_id))
             counts[0] += len(txs)
         return _save
 
@@ -295,8 +298,20 @@ def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
         conn.execute("UPDATE accounts SET backfill_from=?, backfill_until=? WHERE id=?", (first, first, acc_id))
         row = state()
 
+    # The current month comes first, so the app is up to date as soon as possible; days before it that the
+    # last syncs did not reach are filled in after it, with what is left of the request budget.
+    month_start = today.replace(day=1) - timedelta(days=OVERLAP_DAYS)
+    head = [start < month_start]
+
+    def current():
+        if head[0] and not fetch_forward(eb, account["uid"], month_start, today, cap, budget, save(None, True)):
+            head[0] = None                                   # not finished: the gap waits for the next sync
+
     def recent():
-        if fetch_forward(eb, account["uid"], start, today, cap, budget, save("recent_cursor", True)):
+        if head[0] is None:
+            return
+        end = month_start - timedelta(days=1) if head[0] else today
+        if fetch_forward(eb, account["uid"], start, end, cap, budget, save("recent_cursor", True)):
             conn.execute("UPDATE accounts SET recent_until=?, recent_cursor=NULL WHERE id=?", (today.isoformat(), acc_id))
 
     def older():
@@ -307,8 +322,14 @@ def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
     # Right after a new consent the bank still answers for old dates without the customer; later it
     # refuses them. So a fresh link spends its requests on older history first: the recent days are
     # always available, and the next sync fetches them.
-    for step in ((older, recent) if backfill else (recent, older)):
-        step()
+    for step in ((older, current, recent) if backfill else (current, recent, older)):
+        try:
+            step()
+        except EnableBankingError as e:
+            # The bank's limit part-way: what arrived is saved, so this sync counts; the rest waits.
+            if counts[0] and ("RATE_LIMIT" in str(e) or e.status == 429):
+                break
+            raise
     return tuple(counts)
 
 

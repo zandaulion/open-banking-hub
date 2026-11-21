@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- BRD sync: the current month comes first, then the days before it that earlier syncs did not reach, then
+  older history; so an account that is weeks behind is up to date after one sync. A request limit reached
+  after some payments arrived no longer reports the account as skipped. Pending payments are only cleared
+  by an answer that reaches today.
 - Month chart: the selected month is outlined, with no band behind it and no dimming of the others, so a
   month keeps the same colours whether or not it is selected. Income you did not spend is a hatched green
   "left over" segment (the mirror of the red "over income", and hatched so colour alone is not what tells

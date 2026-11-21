@@ -199,13 +199,14 @@ function barPath(x, y, w, hgt, r) {
 // The chart keeps its scroll position across re-renders; selecting a month never moves it, unless
 // the selected month would otherwise be off-screen (then it scrolls just enough to show it).
 function scrollChart(points, { id, visible = 14, height = 150, onTap, label = 'Chart', allAccent = false,
-                                maxOf = (p) => p.value, draw = null, labelOf = null, dimOthers = true } = {}) {
+                                maxOf = (p) => p.value, draw = null, labelOf = null, dimOthers = true, band = true, defs = null } = {}) {
   // Room above the bars for the year labels, and for value marks when there are any.
   const STEP = 24, top = labelOf ? 32 : 18, bottom = 20, gap = 2, H = height + (labelOf ? 14 : 0);
   const n = points.length, cols = Math.max(n, visible), W = cols * STEP;
   const max = Math.max(1, ...points.map(maxOf));
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img', 'aria-label': label });
   svg.style.width = `${(cols / visible) * 100}%`;
+  if (defs) svg.append(...defs());
   const offset = cols - n;   // fewer months than columns: keep them on the right, like the full chart
   const hasSelection = dimOthers && points.some((p) => p.on);
   points.forEach((p, k) => {
@@ -220,7 +221,7 @@ function scrollChart(points, { id, visible = 14, height = 150, onTap, label = 'C
       yr.textContent = p.month.slice(0, 4);
       svg.append(yr);
     }
-    if (p.on) svg.append(s('rect', { x: i * STEP, y: top - 6, width: STEP, height: H - top - bottom + 6, rx: 4, class: 'colsel' }));
+    if (p.on && band) svg.append(s('rect', { x: i * STEP, y: top - 6, width: STEP, height: H - top - bottom + 6, rx: 4, class: 'colsel' }));
     svg.append(g);
     if (draw) {
       draw(g, p, { x, bw, base: H - bottom, scale: (v) => (v / max) * (H - top - bottom) });
@@ -551,8 +552,8 @@ async function renderMonth(params) {
 
   const k = (v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : nf0.format(v));
   const legend = h('div', { class: 'legend' },
-    hasIncome ? h('span', {}, h('i', { class: 'sw income' }), 'Income') : '',
     h('span', {}, h('i', { class: 'sw spent' }), 'Spent'),
+    hasIncome ? h('span', {}, h('i', { class: 'sw left' }), 'Left over') : '',
     hasIncome ? h('span', {}, h('i', { class: 'sw over' }), 'Over income') : '',
     h('span', {}, h('b', { class: 'mk' }, '+12k'), 'one-off'));
   const trend = h('section', { class: 'card' },
@@ -560,21 +561,31 @@ async function renderMonth(params) {
     legend,
     scrollChart(d.trend.map((t) => ({ ...t, on: t.month === m, short: monthShort(t.month)[0],
       tip: [`${monthLabel(t.month)}${t.partial ? (t.month === thisMonth() ? ' (so far)' : ' (history starts mid-month)') : ''}`,
-            hasIncome ? `income ${ron(t.income_ron)}` : null, `spent ${ron(t.outflow_ron)}`,
-            hasIncome ? (t.outflow_ron > t.income_ron ? `over by ${ron(t.outflow_ron - t.income_ron)}` : `left ${ron(t.income_ron - t.outflow_ron)}`) : null,
+            hasIncome && t.income_ron > 0 ? `income ${ron(t.income_ron)}` : null, `spent ${ron(t.outflow_ron)}`,
+            hasIncome && t.income_ron > 0 ? (t.outflow_ron > t.income_ron ? `over by ${ron(t.outflow_ron - t.income_ron)}` : `left ${ron(t.income_ron - t.outflow_ron)}`) : null,
+            hasIncome && !(t.income_ron > 0) ? 'no income known' : null,
             t.one_off_out_ron ? `one-off out ${ron(t.one_off_out_ron)}` : null,
             t.one_off_in_ron ? `one-off in ${ron(t.one_off_in_ron)}` : null].filter(Boolean).join(' · ') })),
-      { id: 'month-trend', label: 'Income and spending per month', dimOthers: false,
+      { id: 'month-trend', label: 'Income and spending per month', dimOthers: false, band: false,
+        defs: () => {
+          // Money left over is hatched, so it is not told apart from "over income" by colour alone.
+          const pat = s('pattern', { id: 'left-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
+          pat.append(s('rect', { width: 6, height: 6, class: 'hatch-bg' }), s('line', { x1: 0, y1: 0, x2: 0, y2: 6, class: 'hatch-line' }));
+          return [pat];
+        },
         onTap: (p) => { if (p.month !== m) setTimeout(() => go('month', { m: p.month }, { replace: true }), 250); },
         maxOf: (p) => Math.max(p.outflow_ron, hasIncome ? p.income_ron : 0),
         labelOf: (p) => (p.one_off_out_ron ? `+${k(p.one_off_out_ron)}` : p.one_off_in_ron ? `↓${k(p.one_off_in_ron)}` : ''),
         draw: (svg, p, g) => {
           const dash = p.partial ? ' partial' : '';
-          const inc = hasIncome ? g.scale(p.income_ron) : 0, sp = g.scale(p.outflow_ron);
-          if (inc > 0) svg.append(s('path', { d: barPath(g.x, g.base - inc, g.bw, inc, 4), class: 'bar income' + dash }));
-          const within = hasIncome ? Math.min(sp, inc) : sp;
-          if (within > 0) svg.append(s('path', { d: barPath(g.x, g.base - within, g.bw, within, hasIncome && sp > inc ? 0 : 4), class: 'bar spent' + dash }));
-          if (hasIncome && sp > inc) {
+          // A month with no income known (before the account that receives it was added) is just spending:
+          // comparing it with nothing would make the whole bar look overspent.
+          const known = hasIncome && p.income_ron > 0;
+          const inc = known ? g.scale(p.income_ron) : 0, sp = g.scale(p.outflow_ron);
+          const within = known ? Math.min(sp, inc) : sp;
+          if (known && inc > sp) svg.append(s('path', { d: barPath(g.x, g.base - inc, g.bw, inc - sp, 4), class: 'bar left' + dash }));
+          if (within > 0) svg.append(s('path', { d: barPath(g.x, g.base - within, g.bw, within, known ? 0 : 4), class: 'bar spent' + dash }));
+          if (known && sp > inc) {
             svg.append(s('path', { d: barPath(g.x, g.base - sp, g.bw, sp - inc, 4), class: 'bar over' + dash }));
             if (inc > 0) svg.append(s('line', { x1: g.x - 1, x2: g.x + g.bw + 1, y1: g.base - inc, y2: g.base - inc, class: 'income-line' }));
           }

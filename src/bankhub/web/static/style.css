@@ -104,10 +104,12 @@ main { max-width: 720px; margin: 0 auto; padding: 4px 14px 24px; }
 .scroller { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
 .chart-wrap { position: relative; }
 /* Income tank: income is the light track, spending fills it, anything above income is "over". */
-.chart .bar.income { fill: color-mix(in srgb, var(--text-muted) 30%, transparent); }   /* what was earned: neutral, so unspent income does not look like a selection */
+.chart .bar.left { fill: url(#left-hatch); }   /* income not spent: hatched green, the mirror of the red "over" */
+.chart .hatch-bg { fill: color-mix(in srgb, var(--down) 18%, transparent); }
+.chart .hatch-line { stroke: var(--down); stroke-width: 2; }
 .chart .bar.spent { fill: var(--accent); }
 .chart .bar.over { fill: var(--up); }
-.chart .bar.income.partial, .chart .bar.spent.partial, .chart .bar.over.partial { stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 3 2; }
+.chart .bar.left.partial, .chart .bar.spent.partial, .chart .bar.over.partial { stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 3 2; }
 .chart .bar.spent.partial { fill: color-mix(in srgb, var(--accent) 45%, transparent); }
 .chart .income-line { stroke: var(--text-primary); stroke-width: 2; }
 .chart .colsel { fill: color-mix(in srgb, var(--text-primary) 9%, transparent); }
@@ -119,7 +121,7 @@ main { max-width: 720px; margin: 0 auto; padding: 4px 14px 24px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-secondary); margin: -4px 0 8px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend .sw { display: inline-block; width: 12px; height: 10px; border-radius: 2px; }
-.legend .sw.income { background: color-mix(in srgb, var(--text-muted) 30%, transparent); }
+.legend .sw.left { background: repeating-linear-gradient(45deg, var(--down) 0 2px, color-mix(in srgb, var(--down) 18%, transparent) 2px 5px); }
 .legend .sw.spent { background: var(--accent); }
 .legend .sw.over { background: var(--up); }
 .legend .mk { font-size: 10px; color: var(--text-secondary); }

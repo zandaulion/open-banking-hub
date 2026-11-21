@@ -237,3 +237,17 @@ def test_a_move_between_a_groups_pockets_is_not_my_transfer(conn, rules):
     ledger.rebuild(conn, rules, today=date(2026, 9, 1))
     mine = conn.execute("SELECT kind, category FROM transactions_clean WHERE account_alias='revolut_ron'").fetchone()
     assert mine["kind"] == "spending" and mine["category"] != "family"
+
+
+def test_a_chance_amount_match_does_not_put_someone_in_a_group(conn, rules):
+    sync.register_session(conn, session("Revolut", [("me", "RON", "CACC"), ("kid", "RON", "CACC")]))
+    conn.execute("INSERT INTO account_groups(id, name, behaviour, category) VALUES (1, 'Kid', 'supported', 'kids')")
+    conn.execute("UPDATE accounts SET group_id=1, own_ibans='[]' WHERE uid='kid'")
+    partner = {"identification": "partner-id"}
+    store(conn, "me", [tx("50", "2026-10-02", name="PARTNER EXAMPLE", other=partner)] +
+          [tx(str(100 + i), f"2026-10-{10 + i}", name="PARTNER EXAMPLE", other=partner) for i in range(5)])
+    store(conn, "kid", [tx("50", "2026-10-02", name="Lidl")])          # the child happened to spend 50 that day
+    ledger.rebuild(conn, rules, today=date(2026, 11, 5))
+    cats = {r["category"] for r in conn.execute("SELECT category FROM transactions_clean WHERE account_alias='revolut_ron'")}
+    assert "kids" not in cats
+    assert conn.execute("SELECT count(*) FROM transaction_groups").fetchone()[0] == 0

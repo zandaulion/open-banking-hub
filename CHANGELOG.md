@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A payment no longer joins a group because its amount happened to match one on the group's account. A
+  matching amount counts for a named payee only when most payments to that name match; before, one chance
+  match could pull every payment to that person into the group, ahead of your own rule for them.
 - BRD history now arrives in full. BRD returns at most 20 transactions per request, the oldest 20 of the
   range asked for, so each request starts where the last one stopped and is saved straight away. A few
   requests per sync fill in two years over several days, and a rate limit only pauses the work. Before,

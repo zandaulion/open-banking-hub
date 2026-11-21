@@ -144,6 +144,7 @@ def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
     own_rows = [r for r in rows if r["account_id"] not in dependent and r["id"] not in found()
                 and (r["id"] not in internal or r["counterparty_has_account"])]
     used: set[int] = set()
+    hits = []
     for o in sorted(own_rows, key=lambda r: r["booking_date"]):
         o_day = date.fromisoformat(o["booking_date"])
         for k in dep_rows:
@@ -153,14 +154,31 @@ def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
             if pair in rejected or abs((date.fromisoformat(k["booking_date"]) - o_day).days) > 2:
                 continue
             used.add(k["id"])
-            pairs.append((*pair, "dependent", 0.8))
-            mark(o, dependent[k["account_id"]])
+            hits.append((o, dependent[k["account_id"]], pair))
             break
-    # Names learned from the transfers found so far (e.g. "To KID EXAMPLE") cover the rest.
+    # A matching amount can be chance (50 RON to someone else the day a child spent 50 RON). For a payee
+    # with a name, believe it only when most payments to that name match: then it is the group's account.
+    total: dict[str, int] = {}
+    for r in rows:
+        if r["account_id"] not in dependent and r["counterparty_has_account"] and r["counterparty_name"]:
+            total[_norm(r["counterparty_name"])] = total.get(_norm(r["counterparty_name"]), 0) + 1
+    matched: dict[str, int] = {}
+    for o, _, _ in hits:
+        if o["counterparty_has_account"] and o["counterparty_name"]:
+            matched[_norm(o["counterparty_name"])] = matched.get(_norm(o["counterparty_name"]), 0) + 1
+    trusted = {n for n, m in matched.items() if m >= 2 and 2 * m >= total[n]}
+    strong = found()
+    for o, group, pair in hits:
+        named = o["counterparty_has_account"] and o["counterparty_name"]
+        if not named or _norm(o["counterparty_name"]) in trusted:
+            pairs.append((*pair, "dependent", 0.8))
+            mark(o, group)
+    # Names from reliable matches (e.g. "To KID EXAMPLE") cover the rest.
     names: dict[str, int] = {}
     for i in found():
-        if by_id[i]["counterparty_name"]:
-            names[_norm(by_id[i]["counterparty_name"])] = (to_dep.get(i) or from_dep.get(i))
+        name = by_id[i]["counterparty_name"]
+        if name and by_id[i]["counterparty_has_account"] and (i in strong or _norm(name) in trusted):
+            names.setdefault(_norm(name), to_dep.get(i) or from_dep.get(i))
     for r in rows:
         if r["account_id"] not in dependent and r["id"] not in found() and r["counterparty_has_account"] \
                 and _norm(r["counterparty_name"]) in names:

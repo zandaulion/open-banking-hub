@@ -246,7 +246,8 @@ bank_code_rules:
   - {codes: ["Plata dobanda cont curent", "re:^plata dobanda"], direction: credit, category: income, subcategory: interest}
   - {codes: ["Plata impozit"], direction: debit, category: taxes, subcategory: interest_tax}
   - {codes: ["re:^retrageri? de numerar"], direction: debit, category: cash}
-  - {codes: ["re:^comision"], direction: debit, category: fees}
+  - {codes: ["re:^comision", "re:^com util"], direction: debit, category: fees}      # "Com Util ATM alte BC": a cash machine fee
+  - {codes: ["Ajustare dobanda"], direction: debit, category: loans, subcategory: interest}   # overdraft interest, a few bani
 
 # Descriptions meaning money moved between your own accounts at the same bank,
 # even when the other side is not visible (e.g. Revolut pockets and savings).

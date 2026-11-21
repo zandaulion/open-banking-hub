@@ -138,3 +138,13 @@ def test_brd_rules(rules):
     assert rules.match_bank_code("Incasare din schimb valutar", debit=False).internal
     assert rules.match_bank_code("Retrageri de Numerar-ATM/MBA BRD", debit=True).category == "cash"
     assert rules.is_own_account_move("BRD", "REVOLUT**1234* VILNIUS LTU")
+
+
+def test_brd_account_statement_types_have_their_own_categories(rules):
+    pick = lambda code, debit=True: (lambda m: m and (m.category, m.subcategory))(rules.match_bank_code(code, debit))
+    assert pick("Rambursare credit") == ("loans", "repayment")
+    assert pick("Plata asigurare") == ("insurance", None)
+    assert pick("Ajustare dobanda") == ("loans", "interest")
+    assert pick("Com Util ATM alte BC inter.sold") == ("fees", None)
+    assert pick("Transfer credit- Alim. conventie", debit=False) == ("income", "salary")
+    assert pick("Transfer credit- Alim. conventie", debit=True) is None      # only the credit side is payroll

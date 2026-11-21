@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Products under one company name are told apart: built-in rules for Google Cloud, Google Play,
+  Google One and YouTube Premium (before the general "Google"), and Google's 0.00 card checks as fees.
+- "All payments to this payee" keeps the product in its match text (`Google*cloud Ab12` → `google*cloud`),
+  shows it editable with a live count and examples, and a narrower match makes a new rule that is checked
+  first instead of changing the broad one.
+- Top-ups through Google Pay or Apple Pay count as transfers between your own accounts.
 - Offline fixes (found on a plane):
   - the offline copy is filled on mobile data too (it was Wi-Fi only, so usually only the screen you
     had open was saved), starting from any screen; about 0.4 MB, at most every six hours;

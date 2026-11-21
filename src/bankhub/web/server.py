@@ -113,6 +113,8 @@ class Recategorize(BaseModel):
     scope: str            # "payee": every payment to this payee (a rule); "one": this payment only
     category: str
     subcategory: str | None = None
+    pattern: str | None = None   # the match text the owner chose; a narrower one makes a new rule
+    name: str | None = None
 
 
 class PushSubscription(BaseModel):
@@ -349,6 +351,38 @@ def create_app(cfg: WebConfig) -> FastAPI:
             raise HTTPException(409, str(e))
         return {"rebuilt": rebuild()}
 
+    def payee_source(row) -> str:
+        return (row["counterparty_name"] if row["counterparty_has_account"]
+                else (row["remittance"] if row["remittance"] and "*" in row["remittance"] else
+                      row["counterparty_name"] or row["remittance"])) or ""
+
+    @app.get("/api/transactions/{tx_id}/payee_rule")
+    def payee_rule(tx_id: int, dev: dict = Depends(device)):
+        """The rule 'all payments to this payee' would create or change, and what it would catch."""
+        with ro() as conn:
+            row = conn.execute("""SELECT t.*, c.merchant, c.counterparty_type FROM transactions_raw t
+                                  JOIN transactions_clean c ON c.id = t.id WHERE t.id = ?""", (tx_id,)).fetchone()
+            if not row:
+                raise HTTPException(404)
+            user_rules = rules_edit.parse_rules(rules_edit.load(cfg.core.rules_path))
+            existing = rules_edit.first_match(user_rules, row)
+            pattern = data.suggest_pattern(payee_source(row))
+            current = None
+            if existing:
+                section, i = existing.split(":")
+                entry = rules_edit.load(cfg.core.rules_path)[section][int(i)]
+                current = {"id": existing, "name": entry.get("name"), "patterns": entry["patterns"],
+                           "category": entry["category"]}
+            return {"pattern": pattern, "existing": current, "preview": rules_edit.preview(conn, pattern),
+                    "named": row["counterparty_type"] == "merchant"}
+
+    @app.get("/api/rules/preview")
+    def rules_preview(pattern: str, dev: dict = Depends(device)):
+        if len(pattern.strip()) < 3:
+            raise HTTPException(400, "At least 3 characters.")
+        with ro() as conn:
+            return rules_edit.preview(conn, pattern)
+
     @app.post("/api/transactions/{tx_id}/category")
     def recategorize(tx_id: int, body: Recategorize, dev: dict = Depends(device)):
         _check_category(body.category, body.subcategory)
@@ -376,6 +410,13 @@ def create_app(cfg: WebConfig) -> FastAPI:
             raise HTTPException(400, "Money in can only be recategorized one payment at a time.")
         user_rules = rules_edit.parse_rules(rules_edit.load(cfg.core.rules_path))
         rule_id = rules_edit.first_match(user_rules, row)
+        chosen = (body.pattern or "").strip()
+        if chosen and not chosen.startswith("re:"):
+            chosen = chosen.lower()
+        if rule_id and chosen:
+            section, i = rule_id.split(":")
+            if chosen not in rules_edit.load(cfg.core.rules_path)[section][int(i)]["patterns"]:
+                rule_id = None   # a narrower match: a new rule, checked first, instead of changing the broad one
         try:
             if rule_id:
                 # The payee already has one of your rules: change that rule rather than stacking another.
@@ -386,10 +427,12 @@ def create_app(cfg: WebConfig) -> FastAPI:
                                            patterns=entry["patterns"], category=body.category,
                                            subcategory=body.subcategory, name=entry.get("name"))
             else:
-                source = row["counterparty_name"] if row["counterparty_has_account"] else \
-                    (row["counterparty_name"] or row["remittance"])
-                name = row["merchant"] if row["counterparty_type"] == "merchant" else None
-                result = rules_edit.add(cfg.core.rules_path, patterns=[data.suggest_pattern(source or "")],
+                pattern = chosen or data.suggest_pattern(payee_source(row))
+                name = None
+                if row["counterparty_type"] == "merchant":
+                    # A narrower match on a known merchant ("google*cloud") gets its own name ("Google Cloud").
+                    name = body.name or (rules_edit.rule_name(pattern) if chosen else row["merchant"])
+                result = rules_edit.add(cfg.core.rules_path, patterns=[pattern],
                                         category=body.category, subcategory=body.subcategory, name=name)
         except ValueError as e:
             raise HTTPException(400, f"Could not make a rule for this payee ({e}); change this payment only.")

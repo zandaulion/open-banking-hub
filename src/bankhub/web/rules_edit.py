@@ -160,3 +160,33 @@ def list_rules(conn: sqlite3.Connection, path: Path) -> list[dict]:
                         "subcategory": entry.get("subcategory"), "patterns": entry["patterns"],
                         "card_only": bool(entry.get("card_only")), "matches": n, "outflow_ron": round(total, 2)})
     return sorted(out, key=lambda r: (r["category"], -(r["outflow_ron"])))
+
+
+def rule_name(pattern: str) -> str:
+    """A readable merchant name from a match text: 'google*cloud' -> 'Google Cloud',
+    'google *google play' -> 'Google Play'."""
+    words = []
+    for w in pattern.replace("*", " ").split():
+        if not words or words[-1].lower() != w.lower():
+            words.append(w)
+    return " ".join(w[:1].upper() + w[1:] for w in words)
+
+
+def preview(conn: sqlite3.Connection, pattern: str) -> dict:
+    """What a rule with this match text would catch, with the same matching as real rules:
+    card payments match name and description, bank transfers the name only."""
+    from ..rules import _compile
+    pat = _compile(pattern.strip() if pattern.strip().startswith("re:") else pattern.strip().lower())
+    n, out, examples = 0, 0.0, []
+    for name, desc, has_acct, ron in conn.execute(
+            """SELECT t.counterparty_name, t.remittance, t.counterparty_has_account, c.amount_ron
+               FROM transactions_raw t JOIN transactions_clean c ON c.id = t.id
+               WHERE c.is_internal_transfer = 0"""):
+        text = (name or "") if has_acct else " | ".join(x for x in (name, desc) if x)
+        if text and pat.search(text):
+            n += 1
+            out += -(ron or 0) if (ron or 0) < 0 else 0
+            label = name or desc
+            if label and label not in examples and len(examples) < 4:
+                examples.append(label)
+    return {"count": n, "outflow_ron": round(out, 2), "examples": examples}

@@ -232,3 +232,32 @@ def test_app_start_applies_pending_migrations(tmp_path):
     create_app(WebConfig(core=core, admin_token=TOKEN, base_url="http://testserver", cookie_path="/", port=0, admin_port=0))
     cols = [r[1] for r in _sq.connect(db).execute("PRAGMA table_info(accounts)")]
     assert "display_name" in cols
+
+
+def test_suggestions_keep_the_product():
+    cases = {"Google*cloud Vcpv4x": "google*cloud", "Google Cloud V3nlhx": "google cloud",
+             "Google *google Play Ap": "google *google play", "Google Google*one 01m": "google google*one",
+             "Ep*example.ro": "example.ro", "Netflix*ab12": "netflix"}
+    for raw, want in cases.items():
+        assert suggest_pattern(raw) == want and want in raw.lower()
+    assert rules_edit.rule_name("google *google play") == "Google Play"
+
+
+def test_a_narrower_match_makes_its_own_rule_ahead_of_a_broad_one(cfg, conn, rules):
+    store(conn, "rev-ron", [tx("120", date.today().strftime("%Y-%m-04"), name="Google*cloud Ab12cd"),
+                            tx("30", date.today().strftime("%Y-%m-05"), name="Google Play Apps")])
+    ledger.rebuild(conn, rules)
+    app = _device(cfg)
+    rules_edit.add(cfg.core.rules_path, patterns=["google"], category="subscriptions", subcategory=None, name="Google")
+    cloud = next(t for t in app.get("/api/transactions").json()["transactions"] if "cloud" in (t["description"] or "").lower())
+    info = app.get(f"/api/transactions/{cloud['id']}/payee_rule").json()
+    assert info["pattern"] == "google*cloud" and info["existing"]["patterns"] == ["google"]
+    assert info["preview"]["count"] == 1
+    assert app.get("/api/rules/preview", params={"pattern": "google"}).json()["count"] == 2
+    r = app.post(f"/api/transactions/{cloud['id']}/category", headers=H,
+                 json={"scope": "payee", "category": "dev", "pattern": "google*cloud"})
+    assert r.status_code == 200 and r.json()["rule"]["name"] == "Google Cloud"
+    cats = {t["description"]: t["category"] for t in app.get("/api/transactions").json()["transactions"]}
+    assert cats["Google*cloud Ab12cd"] == "dev" and cats["Google Play Apps"] == "subscriptions"
+    names = [r["name"] for r in app.get("/api/rules").json()["rules"]]
+    assert "Google Cloud" in names and "Google" in names              # the broad rule is untouched

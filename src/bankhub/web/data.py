@@ -209,11 +209,28 @@ def rename_account(conn: sqlite3.Connection, alias: str, name: str | None) -> bo
 
 
 def suggest_pattern(example: str) -> str:
-    """A pattern that is a real substring of the payee text: 'Ep*example.ro' -> 'example.ro'."""
+    """A pattern that is a real substring of the payee text and keeps what tells products apart:
+    'Ep*example.ro' -> 'example.ro' (a payment processor before the '*'),
+    'Google*cloud Vcpv4x' -> 'google*cloud' (a brand, then its product), 'Google Cloud V3nlhx' -> 'google cloud'."""
     text = (example or "").lower().strip()
     if "*" in text:
-        head, tail = text.split("*", 1)
-        text = tail.strip() if len(head.strip()) <= 5 else head.strip()
+        star = text.index("*")
+        head = text[:star].strip()
+        if len(head) <= 5:
+            text = text[star + 1:].strip()
+        else:
+            rest = text[star + 1:]
+            words = rest.split()
+            take = words[:1]
+            # "Google *google Play": the brand repeated after the '*' says nothing; keep the next word too.
+            if take and take[0] == head.split()[-1] and len(words) > 1 and not any(ch.isdigit() for ch in words[1]):
+                take = words[:2]
+            if take and not any(ch.isdigit() for ch in take[0]):
+                last = take[-1]
+                end = rest.index(last, rest.index(take[0])) + len(last)
+                # Up to the end of the product, exactly as written (with or without a space before '*').
+                return text[:star + 1 + end]
+            text = head
     words = []
     for w in text.split():
         if any(ch.isdigit() for ch in w) or len(words) == 2:

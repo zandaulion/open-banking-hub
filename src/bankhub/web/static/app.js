@@ -859,6 +859,39 @@ async function openTxSheet(t, onDone) {
   const oneByDefault = isIn || !!t.is_one_off || !!t.overridden;
   const scopeAll = h('input', { type: 'radio', name: 'scope', value: 'payee', checked: !oneByDefault, disabled: isIn });
   const scopeOne = h('input', { type: 'radio', name: 'scope', value: 'one', checked: oneByDefault });
+  // "All payments to this payee": show what the rule will match, editable, with a live count.
+  const matchInput = h('input', { autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+  const matchInfo = h('p', { class: 'faint', style: 'margin:4px 0 0;font-size:13px' });
+  const matchBox = h('div', { hidden: true }, h('label', { class: 'field' }, 'Matches payments containing', matchInput), matchInfo);
+  let ruleInfo = null, previewTimer = null;
+  const describe = (p, note) => {
+    matchInfo.textContent = `${p.count} payment${p.count === 1 ? '' : 's'}, ${ron(p.outflow_ron)} spent` +
+      (p.examples.length ? ` · e.g. ${p.examples.slice(0, 3).join(', ')}` : '') + (note ? ` · ${note}` : '');
+  };
+  const existingNote = () => ruleInfo && ruleInfo.existing && ruleInfo.existing.patterns.includes(matchInput.value.trim().toLowerCase())
+    ? `updates your rule "${ruleInfo.existing.name || ruleInfo.existing.patterns[0]}"`
+    : (ruleInfo && ruleInfo.existing ? 'a new, more specific rule; it is checked first' : '');
+  matchInput.addEventListener('input', () => {
+    clearTimeout(previewTimer);
+    const v = matchInput.value.trim();
+    if (v.length < 3) { matchInfo.textContent = 'At least 3 characters.'; return; }
+    previewTimer = setTimeout(async () => {
+      try { describe(await api(`rules/preview?${new URLSearchParams({ pattern: v })}`), existingNote()); }
+      catch (e) { matchInfo.textContent = e.message; }
+    }, 300);
+  });
+  const showMatch = async () => {
+    matchBox.hidden = !scopeAll.checked;
+    if (!scopeAll.checked || ruleInfo) return;
+    matchInfo.textContent = 'Checking…';
+    try {
+      ruleInfo = await api(`transactions/${t.id}/payee_rule`);
+      matchInput.value = ruleInfo.pattern;
+      describe(ruleInfo.preview, existingNote());
+    } catch (e) { matchInfo.textContent = e.message; }
+  };
+  scopeAll.addEventListener('change', showMatch);
+  scopeOne.addEventListener('change', showMatch);
   const msg = h('p', { class: 'muted', role: 'status' });
   const save = h('button', { class: 'btn primary' }, 'Save');
   const reset = t.overridden ? h('button', { class: 'btn' }, 'Undo my change') : '';
@@ -868,7 +901,9 @@ async function openTxSheet(t, onDone) {
     if (!v.category) { msg.textContent = 'Choose a category.'; return; }
     save.disabled = true; msg.textContent = 'Saving and re-sorting…';
     try {
-      await api(`transactions/${t.id}/category`, { method: 'POST', body: { scope: scopeAll.checked ? 'payee' : 'one', ...v } });
+      const body = { scope: scopeAll.checked ? 'payee' : 'one', ...v };
+      if (scopeAll.checked && matchInput.value.trim()) body.pattern = matchInput.value.trim();
+      await api(`transactions/${t.id}/category`, { method: 'POST', body });
       state.categories = null;
       finish();
     } catch (e) { msg.textContent = e.message; save.disabled = false; }
@@ -891,8 +926,10 @@ async function openTxSheet(t, onDone) {
     } catch (e) { msg.textContent = e.message; }
   });
   let sheetDirty = false;
+  setTimeout(showMatch, 0);
   sheet = sheetOpen(...head, ...picker.fields,
     h('label', { class: 'toggle' }, scopeAll, isIn ? 'All payments from this payee (spending only)' : 'All payments to this payee (saved as one of your rules)'),
+    matchBox,
     h('label', { class: 'toggle' }, scopeOne, 'Only this payment'),
     h('label', { class: 'field' }, `One-off${t.is_one_off ? ' (it is now)' : ''}`, oneOff),
     msg,

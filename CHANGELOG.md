@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Statements for BRD current accounts. Add a month's statement (PDF) and its payments appear at once, for
+  history the sync has not fetched yet. They are checked against the statement's totals and balances,
+  not counted twice if the sync already has them, and replaced by the bank's own records when the sync
+  gets there. Payroll credits ("Alim. conventie": salary, bonus) now count as income, so Month shows income
+  for BRD; loan instalments ("Rambursare credit") and insurance have their own categories.
 - Credit cards from statements. A bank that does not share a credit card (BRD) can still be covered:
   on Accounts, add the monthly statement (PDF), several at once for older months. The app reads it
   itself and keeps only the payments, what is owed, the limit, the due date and the instalment plans,

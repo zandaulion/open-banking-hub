@@ -63,10 +63,23 @@ rules. These are the banks Bank Hub was built against, and what it does about ea
 - **Card payments to Revolut** (`REVOLUT**1234* VILNIUS`) count as transfers between your own
   accounts.
 
-## Credit cards from statements
+## Statements
 
-For a card a bank does not share, add the monthly statement (PDF) on **Accounts → Credit cards**
-(several files at once work, for older months). Bank Hub reads the PDF with `pdftotext`
+Add a monthly statement (PDF) on **Accounts → Add a statement**; several files at once work. The kind is
+recognised from the file. Bank Hub reads PDFs with `pdftotext` (poppler-utils; the Docker image has it)
+and keeps only what it reads, never the PDF with the holder's name and address. Adding a statement twice
+changes nothing.
+
+- **BRD current account:** adds the payments the account does not have yet, so history the sync has not
+  reached (BRD hands it out slowly) is there at once. A payment the sync already fetched (same amount, within two
+  days) is left alone, and when the sync reaches a period a statement filled in, the bank's own records
+  replace the statement's lines, so nothing is counted twice. The statement's IBAN must belong to a linked
+  account. The lines must add up to its totals and opening and closing balance, or the app says so.
+
+### Credit cards
+
+For a card a bank does not share, the statements are the only source: the card shows under **Accounts →
+Credit cards**. Bank Hub reads the PDF with `pdftotext`
 (poppler-utils; the Docker image has it) and keeps only what it reads: the payments, what is owed,
 the limit, the due date and the instalment plans. The PDF itself, with the cardholder's name and
 address, is not stored. Adding a statement twice changes nothing.

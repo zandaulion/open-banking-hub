@@ -176,12 +176,12 @@ def rebuild():
 
 @app.command("import-statement")
 def import_statement(files: list[Path]):
-    """Add credit card statements (PDF) for a card the bank does not share. Prints counts only."""
+    """Add statements (PDF): a credit card the bank does not share, or payments the sync has not fetched yet. Prints counts only."""
     conn = _db()
     for f in files:
         try:
-            st = statements.parse_brd_card(statements.pdf_text(f.read_bytes()))
-            r = statements.store_statement(conn, st)
+            st = statements.parse_statement(statements.pdf_text(f.read_bytes()))
+            r = statements.store(conn, st)
         except statements.StatementError as e:
             typer.echo(f"{f.name}: {e}")
             continue

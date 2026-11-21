@@ -7,7 +7,7 @@ from bankhub import ledger, queries, statements, sync
 from bankhub.statements import StatementError, parse_brd_card, store_statement
 
 from conftest import session, store, tx
-from statement_fixture import CARD_IBAN, statement
+from statement_fixture import CARD_IBAN, LOAN_IBAN, statement
 
 MAIN_IBAN = "RO00TEST0000000000000001"
 
@@ -80,3 +80,50 @@ def test_a_newer_statement_is_the_one_shown(conn):
     older.period_end, older.period_start, older.owed_minor = "2026-09-25", "2026-08-26", 111100
     store_statement(conn, older)
     assert queries.balances(conn)["card_owed_ron"] == 9849.84
+
+
+from statement_fixture import account_statement
+from bankhub.statements import parse_statement
+
+
+def test_parses_a_current_account_statement_across_a_page_break():
+    st = parse_statement(account_statement(MAIN_IBAN))
+    assert (st.iban, st.period_start, st.period_end, st.warnings) == (MAIN_IBAN, "2026-10-01", "2026-10-31", [])
+    assert [(ln.date, ln.amount_minor) for ln in st.lines] == [
+        ("2026-10-02", -19000), ("2026-10-05", -4550), ("2026-10-10", 2000000), ("2026-10-12", -285000),
+        ("2026-10-15", -7000), ("2026-10-20", -300000)]
+    assert st.lines[1].value_date == "2026-10-07"
+    payroll = st.lines[2].text.split("|")
+    # Across the page break; the UUID is dropped; the IBAN slot is blank, as the bank's API leaves it.
+    assert payroll[0] == "Transfer credit- Alim. conventie" and payroll[-1] == "Plata Salarii"
+    assert MAIN_IBAN not in st.lines[2].text and "1234abcd" not in st.lines[2].text
+    assert LOAN_IBAN in st.lines[3].text                     # a loan instalment keeps the account it is paid to
+    assert any("debits and credits" in w for w in parse_statement(account_statement(MAIN_IBAN, extra_debit=100)).warnings)
+
+
+def test_current_account_statement_fills_gaps_once_and_the_sync_replaces_it(conn, rules):
+    _main(conn)
+    st = parse_statement(account_statement(MAIN_IBAN))
+    # The sync already has the 190 RON payment, a day off.
+    store(conn, "main", [tx("190", "2026-10-03", name="Jane Example", iban="RO00TEST0000000000000555")])
+    first, again = statements.store(conn, st), statements.store(conn, st)
+    assert (first["new"], first["already_had"], again["new"], again["already_had"]) == (5, 1, 0, 6)
+    assert first["kind"] == "account" and conn.execute("SELECT count(*) FROM transactions_raw").fetchone()[0] == 6
+    ledger.rebuild(conn, rules, today=date(2026, 11, 5))
+    by = {(r["amount"]): dict(r) for r in conn.execute("SELECT * FROM transactions_clean")}
+    assert (by[20000.0]["kind"], by[20000.0]["subcategory"]) == ("income", "salary")      # payroll is income, not a transfer
+    assert (by[-2850.0]["category"], by[-2850.0]["subcategory"]) == ("loans", "repayment")    # not an own transfer
+    assert by[-70.0]["category"] == "insurance"
+    assert by[-3000.0]["is_internal_transfer"] == 1                                            # a card top-up of Revolut
+    s = queries.spending_summary(conn, date_from="2026-10-01", date_to="2026-10-31")
+    assert s["total_outflow_ron"] == pytest.approx(190 + 45.5 + 2850 + 70)
+    # Later the sync fetches the salary itself, a day off: its own record replaces the statement's line.
+    store(conn, "main", [tx("20000", "2026-10-11", debit=False, name="Dl EXAMPLE PERSON", text="Transfer credit- Alim. conventie|Automat|OPH0001")])
+    rows = conn.execute("SELECT entry_reference FROM transactions_raw WHERE amount_minor=2000000").fetchall()
+    assert len(rows) == 1 and not rows[0][0].startswith("stmt-")
+    assert conn.execute("SELECT count(*) FROM transactions_raw").fetchone()[0] == 6
+
+
+def test_a_statement_for_an_account_that_is_not_linked_is_refused(conn):
+    with pytest.raises(StatementError, match="not linked"):
+        statements.store(conn, parse_statement(account_statement(MAIN_IBAN)))

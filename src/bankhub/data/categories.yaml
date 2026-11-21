@@ -239,6 +239,9 @@ bank_code_rules:
   - {codes: ["Cash withdrawal", "Cash withdrawal RON wallet ATM ING"], direction: debit, category: cash}
   # BRD (the first part of its description)
   - {codes: ["re:schimb valutar"], internal: true}
+  - {codes: ["re:alim\\. conventie"], direction: credit, category: income, subcategory: salary}   # payroll credits: salary, bonus
+  - {codes: ["Rambursare credit"], direction: debit, category: loans, subcategory: repayment}   # a loan instalment, principal and interest
+  - {codes: ["Plata asigurare"], direction: debit, category: insurance}
   - {codes: ["Plata dobanda limita credit"], direction: debit, category: loans, subcategory: interest}
   - {codes: ["Plata dobanda cont curent", "re:^plata dobanda"], direction: credit, category: income, subcategory: interest}
   - {codes: ["Plata impozit"], direction: debit, category: taxes, subcategory: interest_tax}

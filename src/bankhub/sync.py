@@ -114,6 +114,15 @@ def _store_transactions(conn: sqlite3.Connection, account_id: int, txs: list[dic
             continue
         exists = conn.execute("SELECT 1 FROM transactions_raw WHERE account_id=? AND dedup_key=?",
                               (account_id, n.dedup_key)).fetchone()
+        twin = None
+        if not exists and not (n.entry_reference or "").startswith("stmt-"):
+            # A payment added from a statement before the sync got to it: the bank's own record replaces it.
+            twin = conn.execute(
+                "SELECT id FROM transactions_raw WHERE account_id=? AND entry_reference LIKE 'stmt-%' AND amount_minor=?"
+                " AND booking_date BETWEEN date(?, '-2 days') AND date(?, '+2 days')"
+                " ORDER BY abs(julianday(booking_date) - julianday(?)) LIMIT 1",
+                (account_id, n.amount_minor, n.booking_date, n.booking_date, n.booking_date)).fetchone() \
+                if n.booking_date else None
         conn.execute(
             """INSERT INTO transactions_raw(account_id, dedup_key, entry_reference, status, booking_date, value_date,
                    amount_minor, currency, counterparty_name, counterparty_iban, counterparty_has_account,
@@ -129,8 +138,15 @@ def _store_transactions(conn: sqlite3.Connection, account_id: int, txs: list[dic
              n.currency, n.counterparty_name, n.counterparty_iban, int(n.counterparty_has_account), n.remittance,
              n.payload, now, now, n.bank_code))
         new += 0 if exists else 1
-        seen.add(conn.execute("SELECT id FROM transactions_raw WHERE account_id=? AND dedup_key=?",
-                              (account_id, n.dedup_key)).fetchone()[0])
+        row_id = conn.execute("SELECT id FROM transactions_raw WHERE account_id=? AND dedup_key=?",
+                              (account_id, n.dedup_key)).fetchone()[0]
+        seen.add(row_id)
+        if twin:
+            conn.execute("UPDATE OR IGNORE transaction_overrides SET raw_id=? WHERE raw_id=?", (row_id, twin[0]))
+            conn.execute("DELETE FROM transaction_overrides WHERE raw_id=?", (twin[0],))
+            conn.execute("DELETE FROM transfer_pairs WHERE debit_id=? OR credit_id=?", (twin[0], twin[0]))
+            conn.execute("DELETE FROM transactions_raw WHERE id=?", (twin[0],))
+            new -= 1                     # it was already counted when the statement added it
     # Pending rows not returned again have settled (under a new reference) or been cancelled.
     stale = [] if not prune_pending else \
         [r[0] for r in conn.execute("SELECT id FROM transactions_raw WHERE account_id=? AND status='PDNG'",

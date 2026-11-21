@@ -109,7 +109,8 @@ def overview(conn: sqlite3.Connection, month: str) -> dict:
     newest = conn.execute("SELECT max(booking_date) FROM transactions_clean").fetchone()[0]
     # Income only means something to compare against once a salary-like regular income is known.
     has_regular_income = conn.execute(
-        "SELECT 1 FROM recurring_series WHERE direction = 'in' LIMIT 1").fetchone() is not None
+        "SELECT 1 FROM recurring_series WHERE direction = 'in' UNION ALL"
+        " SELECT 1 FROM transactions_clean WHERE kind = 'income' AND subcategory = 'salary' LIMIT 1").fetchone() is not None
     return {"month": month, **now, "has_regular_income": has_regular_income, "outflow_ron": now["spent_ron"], "previous": {"month": prev, **before},
             "to_date": to_date, "categories": cats, "groups": group_month(conn, start, end), "payees": payees, "one_offs": one_offs, "trend": trend,
             "internal_excluded": {"n": excluded[0], "volume_ron": excluded[1] or 0.0},

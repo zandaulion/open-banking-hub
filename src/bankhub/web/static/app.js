@@ -1222,12 +1222,12 @@ function statementPicker(onDone, label = 'Add a statement (PDF)') {
       try {
         const r = await api(`statements?rebuild_after=${i === files.length - 1}`, { method: 'POST', body: new Blob([f], { type: 'application/pdf' }) });
         added += r.new;
-        if (r.warnings.length) notes.push(`${dayLabel(r.period_end)}: ${r.warnings.join(' ')}`);
+        notes.push(`${r.account || 'Statement'} up to ${dayLabel(r.period_end)}: ${r.new} new, ${r.already_had} already there.${r.warnings.length ? ' ' + r.warnings.join(' ') : ''}`);
       } catch (e) { notes.push(`${f.name}: ${e.message}`); }
     }
-    msg.textContent = `${added} new payment${added === 1 ? '' : 's'} added.${notes.length ? ' ' + notes.join(' ') : ''}`;
+    msg.textContent = notes.join(' ');
     btn.disabled = false; input.value = '';
-    if (added || !notes.length) setTimeout(onDone, notes.length ? 4000 : 800);
+    if (added) setTimeout(onDone, 4000);
   });
   return h('div', {}, btn, input, msg);
 }
@@ -1290,17 +1290,18 @@ async function renderAccounts(params) {
           h('div', { class: 'row-sub' }, h('span', {}, `${a.institution} · ${a.alias}`)))))) : h('p', { class: 'muted' }, 'No accounts yet.'));
   });
   const newGroup = h('p', { class: 'center-text' }, h('button', { class: 'btn', onclick: () => openGroupSheet(null) }, 'New group'));
-  const cardsCard = h('section', { class: 'card' }, h('h2', {}, 'Credit cards'),
-    d.cards.length ? h('ul', { class: 'rows' }, d.cards.map((c) => h('li', {},
+  const cardsCard = d.cards.length ? h('section', { class: 'card' }, h('h2', {}, 'Credit cards'),
+    h('ul', { class: 'rows' }, d.cards.map((c) => h('li', {},
       h('button', { class: 'rowbtn', onclick: () => openCardSheet(c) },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, c.name), h('span', { class: 'amt num' }, `${ron(c.owed_ron)} owed`)),
         c.limit_ron ? h('div', { class: 'meter' }, h('span', { style: `width:${Math.min(100, (c.owed_ron / c.limit_ron) * 100)}%` })) : '',
         h('div', { class: 'row-sub' }, h('span', {}, c.due_date ? `Due ${dayLabel(c.due_date)}${c.min_due_ron ? ` · min ${ron(c.min_due_ron)}` : ''}` : `Up to ${dayLabel(c.period_end)}`),
-          h('span', {}, c.limit_ron ? `${ron(c.available_ron)} available` : '')))))) : '',
-    h('p', { class: 'faint', style: 'margin:8px 0 10px;font-size:13px' }, d.cards.length
-      ? 'Owed on a card is not part of your total above. Add each new statement once a month.'
-      : "Banks don't share credit cards. Add the monthly statement (PDF) from your bank's app: the app reads it here and keeps only the payments, not the file. BRD statements for now."),
-    statementPicker(() => refresh()));
+          h('span', {}, c.limit_ron ? `${ron(c.available_ron)} available` : '')))))),
+    h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, 'Owed on a card is not part of your total above.')) : '';
+  const statementCard = h('section', { class: 'card' }, h('h2', {}, 'Add a statement'),
+    h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' },
+      "Add a monthly statement (PDF) from your bank's app. A current account gets the payments the sync has not fetched yet; a credit card, which banks don't share, is added from its statements, once a month. The app reads the file here and keeps only the payments, not the PDF. BRD for now."),
+    statementPicker(() => refresh(), 'Add statements (PDF)'));
 
   const syncBtn = h('button', { class: 'btn', disabled: !!state.offline }, state.offline ? 'Sync needs the server' : 'Sync now');
   const syncMsg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
@@ -1341,7 +1342,7 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
-  view.replaceChildren(total, cardsCard, ...groupCards, newGroup, banks, healthCard(d.health), alertsCard(), link);
+  view.replaceChildren(total, cardsCard, ...groupCards, newGroup, statementCard, banks, healthCard(d.health), alertsCard(), link);
 }
 
 offlinePrune();

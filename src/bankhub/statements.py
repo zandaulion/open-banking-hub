@@ -1,8 +1,10 @@
-"""Credit card statements (PDF) for cards a bank does not share over open banking.
+"""Statements (PDF) from the bank: credit cards the bank does not share over open banking, and current
+accounts whose history the bank's API only hands out slowly.
 
-A statement is read into lines, a summary (owed, limit, due date) and instalment plans. The lines are
-stored like any bank transaction, on an account whose `source` is 'statement'. Only what is parsed is kept:
-the PDF itself holds the cardholder's name and address and is never stored.
+A card statement is read into lines, a summary (owed, limit, due date) and instalment plans, and stored on an
+account whose `source` is 'statement'. A current account statement adds the payments the sync has not
+fetched yet to the linked account, and the sync later replaces them with the bank's own records. Only what is
+parsed is kept: the PDF itself holds the holder's name and address and is never stored.
 """
 
 import hashlib
@@ -13,7 +15,7 @@ import sqlite3
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from . import sync
@@ -64,6 +66,27 @@ class Statement:
     installments_future_minor: int | None = None
     lines: list[Line] = field(default_factory=list)
     plans: list[Plan] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AccountLine:
+    date: str                  # operation date
+    value_date: str
+    amount_minor: int          # signed: money out is negative
+    text: str                  # "type|channel|reference|party|account|bank|details", as the bank's API writes it
+
+
+@dataclass
+class AccountStatement:
+    bank: str
+    iban: str
+    currency: str
+    period_start: str
+    period_end: str
+    start_minor: int | None = None
+    end_minor: int | None = None
+    lines: list[AccountLine] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -220,6 +243,73 @@ def parse_brd_card(text: str) -> Statement:
     return st
 
 
+# ---------------------------------------------------------------- BRD current account
+
+UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+ACCOUNT_ENTRY = re.compile(rf"^\s{{0,3}}({DATE})\s{{2,}}(\S.*?)\s+({AMOUNT})\s+({DATE})\s*$")
+ACCOUNT_ENTRY_START = re.compile(rf"^\s{{0,3}}{DATE}\s{{2,}}\S")
+
+
+def parse_brd_account(text: str) -> AccountStatement:
+    rows = text.splitlines()
+    iban = re.search(r"IBAN\s+(RO\d{2}[A-Z]{4}[0-9A-Z]{16})", text)
+    period = re.search(rf"De la / From\s+({DATE})\s+La / To\s+({DATE})", text)
+    currency = re.search(r"Valuta / Currency\s+([A-Z]{3})", text)
+    header = next((r for r in rows if "Data oper." in r and "Credit" in r), None)
+    if not (iban and period and currency and header):
+        raise StatementError("The statement's account, period or columns were not found.")
+    credit_col = header.index("Credit")               # amounts ending past this column are credits
+    st = AccountStatement(bank="BRD", iban=iban.group(1), currency=currency.group(1),
+                          period_start=_iso(period.group(1)), period_end=_iso(period.group(2)))
+    opening = re.search(rf"Sold initial / Start balance\s+({AMOUNT})", text)
+    closing = re.search(rf"Sold final / End balance\s+({AMOUNT})", text)
+    totals = re.search(rf"Total debit / Total credit\s+({AMOUNT})\s+({AMOUNT})", text)
+    st.start_minor = _money(opening.group(1)) if opening else None
+    st.end_minor = _money(closing.group(1)) if closing else None
+
+    entries: list[dict] = []
+    for r in rows:
+        if "Total debit / Total credit" in r:
+            break
+        m = ACCOUNT_ENTRY.match(r)
+        if m:
+            cents = _money(m.group(3))
+            entries.append({"date": m.group(1), "desc": m.group(2).strip(), "value": m.group(4),
+                            "amount": cents if m.end(3) >= credit_col else -cents, "details": []})
+        elif entries and not ACCOUNT_ENTRY_START.match(r) and r.strip() and 10 <= len(r) - len(r.lstrip()) <= 16:
+            detail = r.strip()
+            if not UUID.match(detail):
+                entries[-1]["details"].append(detail)
+
+    for e in entries:
+        details = e["details"]
+        if e["amount"] > 0 and "alim. conventie" in e["desc"].lower():
+            # Payroll credits name the account holder where the payer would be: keep the name, drop the IBAN,
+            # as the bank's API does, so the credit is not mistaken for a move between the holder's accounts.
+            details = ["" if IBAN.fullmatch(d.replace(" ", "")) else d for d in details]
+        st.lines.append(AccountLine(date=_iso(e["date"]), value_date=_iso(e["value"]), amount_minor=e["amount"],
+                                    text="|".join([e["desc"], *details])))
+
+    credits = sum(ln.amount_minor for ln in st.lines if ln.amount_minor > 0)
+    debits = -sum(ln.amount_minor for ln in st.lines if ln.amount_minor < 0)
+    if totals and (_money(totals.group(1)), _money(totals.group(2))) != (debits, credits):
+        st.warnings.append("The payments read from this statement do not add up to its totals of debits and credits.")
+    elif st.start_minor is not None and st.end_minor is not None and st.start_minor + credits - debits != st.end_minor:
+        st.warnings.append("The payments read from this statement do not take its opening balance to its closing balance.")
+    if not st.lines:
+        st.warnings.append("No transactions were found in this statement.")
+    return st
+
+
+def parse_statement(text: str) -> Statement | AccountStatement:
+    """Reads whichever kind of BRD statement this is."""
+    if "Cardul de Credit BRD" in text:
+        return parse_brd_card(text)
+    if "Descriere operatiune" in text and "Extras de cont" in text:
+        return parse_brd_account(text)
+    raise StatementError("This does not look like a BRD statement (a current account or a credit card).")
+
+
 # ---------------------------------------------------------------- storing
 
 def _card_account(conn: sqlite3.Connection, st: Statement) -> int:
@@ -295,3 +385,56 @@ def store_statement(conn: sqlite3.Connection, st: Statement) -> dict:
                          " VALUES (?,?,?,?,?)", (acc, stamp, "STMT", -st.owed_minor, "RON"))
     return {"period_start": st.period_start, "period_end": st.period_end, "lines": len(st.lines), "new": new,
             "already_had": len(st.lines) - new, "warnings": st.warnings}
+
+
+def store_account_statement(conn: sqlite3.Connection, st: AccountStatement) -> dict:
+    """Adds the payments of a current account statement that the account does not have yet. A payment the sync
+    already fetched (same amount, within two days) is left alone; the sync later replaces what is added here."""
+    acc = next((r for r in conn.execute("SELECT id, own_ibans, coalesce(display_name, alias) AS name FROM accounts"
+                                        " WHERE source = 'bank' AND active = 1")
+                if st.iban in json.loads(r["own_ibans"] or "[]")), None)
+    if not acc:
+        raise StatementError("This statement is for an account that is not linked. Link the bank first.")
+    with transaction(conn):
+        lo = (date.fromisoformat(st.period_start) - timedelta(days=2)).isoformat()
+        hi = (date.fromisoformat(st.period_end) + timedelta(days=2)).isoformat()
+        pool = [dict(r) for r in conn.execute(
+            "SELECT id, booking_date, amount_minor FROM transactions_raw WHERE account_id=? AND booking_date BETWEEN ? AND ?",
+            (acc["id"], lo, hi))]
+        taken: set[int] = set()
+
+        def match(line: AccountLine, slack: int) -> bool:
+            day = date.fromisoformat(line.date)
+            for r in pool:
+                if r["id"] not in taken and r["amount_minor"] == line.amount_minor \
+                        and abs((date.fromisoformat(r["booking_date"]) - day).days) <= slack:
+                    taken.add(r["id"])
+                    return True
+            return False
+
+        # Same day first, so that two equal payments on neighbouring days pair up correctly.
+        rest = [ln for ln in st.lines if not match(ln, 0)]
+        missing = [ln for ln in rest if not match(ln, 2)]
+        seen: dict[tuple, int] = {}
+        txs = []
+        for ln in missing:
+            basis = (ln.date, ln.amount_minor, ln.text)
+            seen[basis] = seen.get(basis, 0) + 1
+            digest = hashlib.sha256(json.dumps([st.iban, *basis, seen[basis]]).encode()).hexdigest()[:24]
+            cents = abs(ln.amount_minor)
+            txs.append({"entry_reference": f"stmt-{digest}", "status": "BOOK", "booking_date": ln.date,
+                        "value_date": ln.value_date, "credit_debit_indicator": "DBIT" if ln.amount_minor < 0 else "CRDT",
+                        "transaction_amount": {"amount": f"{cents // 100}.{cents % 100:02d}", "currency": st.currency},
+                        "remittance_information": [ln.text], "bank_transaction_code": {}})
+        new = sync._store_transactions(conn, acc["id"], txs, prune_pending=False)
+    return {"kind": "account", "account": acc["name"], "period_start": st.period_start, "period_end": st.period_end,
+            "lines": len(st.lines), "new": new, "already_had": len(st.lines) - new, "warnings": st.warnings}
+
+
+def store(conn: sqlite3.Connection, st: Statement | AccountStatement) -> dict:
+    if isinstance(st, AccountStatement):
+        return store_account_statement(conn, st)
+    result = store_statement(conn, st)
+    name = conn.execute("SELECT coalesce(display_name, alias) FROM accounts WHERE source='statement'"
+                        " AND identity_hash=?", (hashlib.sha256(f"{st.bank}:{st.iban}".encode()).hexdigest()[:32],)).fetchone()
+    return {"kind": "card", "account": name[0] if name else None, **result}

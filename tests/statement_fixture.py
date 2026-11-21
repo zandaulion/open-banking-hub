@@ -1,6 +1,7 @@
 """An invented BRD credit card statement, laid out like the real one (as pdftotext -layout writes it)."""
 
 CARD_IBAN = "RO00TEST0000000000000777"
+LOAN_IBAN = "RO00TEST0000000000000444"       # the loan account a repayment goes to
 
 
 def _money(cents: int) -> str:
@@ -82,3 +83,53 @@ Total rate curente: 700,00 Lei
 Total rate scadente in viitor: 1.500,00 Lei
 """
     return head + "\n".join(rows) + "\n" + plans
+
+
+def _entry(date: str, desc: str, cents: int, details: list[str], value: str | None = None) -> list[str]:
+    amount = _money(abs(cents))
+    end = 116 if cents > 0 else 92
+    first = date.ljust(13) + desc
+    return [first.ljust(end - len(amount)) + amount + "   " + (value or date)] + [" " * 14 + d for d in details]
+
+
+def account_statement(iban: str, extra_debit: int = 0) -> str:
+    """An invented BRD current account statement: payroll, a loan instalment, a Revolut top-up by card, with a page
+    break in the middle of the payroll entry."""
+    rows = []
+    rows += _entry("02/10/2026", "Plata instant", -19000, ["Mobile Omnichannel", "OPH000000000001", "Jane Example",
+                                                           "RO00TEST0000000000000555", "Example Bank N.V.", "Lunch"])
+    rows += _entry("05/10/2026", "Utilizare POS comerciant alte BC", -4550, ["Card/Terminale", "OP 1234567/12345", "Card nr....1234",
+                                                                             "Example Market Bucharest ROM"], "07/10/2026")
+    rows += _entry("10/10/2026", "Transfer credit- Alim. conventie", 2000000, ["Automat", "OPH0001"])
+    rows += ["", "BRD-Groupe Societe Generale S.A.Turn BRD - Example", "Mihalache nr. 1-7, Bucuresti",
+             " " * 63 + "999/99.99.9999, inregistrata in Registrul Public al CNVM cu nr.", " " * 110 + "Pag. 2 /     3", "",
+             " Data oper.                       Descriere operatiune                        Debit                 Credit"
+             "                Data val.", " Trans.Date                     Transaction description", "",
+             " " * 14 + "1234abcd-1234-1234-1234-123456789012", " " * 14 + "Dl EXAMPLE PERSON", " " * 14 + iban,
+             " " * 14 + "Plata Salarii", ""]
+    rows += _entry("12/10/2026", "Rambursare credit", -285000, ["Automat", "OP 1234567890123456", "Dl EXAMPLE PERSON", LOAN_IBAN,
+                                                              "Rata-12/10/2026", "Credit 2650.00", "Dobanda 200.00"])
+    rows += _entry("15/10/2026", "Plata asigurare", -7000, ["Automat", "OP 1234567890123457", "Dl EXAMPLE PERSON", LOAN_IBAN])
+    rows += _entry("20/10/2026", "Utilizare POS comerciant strain.", -300000, ["Card/Terminale", "OP 1234567/12346", "Card nr....1234",
+                                                                              "Revolut**1234* Dublin IRL"])
+    debits = 19000 + 4550 + 285000 + 7000 + 300000 + extra_debit
+    head = f"""
+Domicilierea contului / Account Domiciliation                           Extras de cont / Statement
+Suc. EXAMPLE                                                            De la / From 01/10/2026 La / To         31/10/2026
+
+Referinte bancare / Banking references
+Titular / Account holder       Dl EXAMPLE PERSON
+IBAN          {iban}
+Valuta / Currency           RON
+
+ Data oper.                       Descriere operatiune                        Debit                 Credit                Data val.
+ Trans.Date                     Transaction description
+
+                                Sold initial / Start balance                                                 {_money(100000)}
+
+"""
+    tail = f"""
+                                    Total debit / Total credit                                         {_money(debits)}               {_money(2000000)}
+                                Sold final / End balance                                                                    {_money(100000 + 2000000 - debits)}
+"""
+    return head + "\n".join(rows) + "\n" + tail

@@ -334,11 +334,12 @@ def category_choices(conn: sqlite3.Connection, rules_text: str) -> list[str]:
 
 def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
     """Is each bank connection alive, how far back is history, and when did backups last run."""
-    from ..sync import BACKFILL_DAYS, WINDOWED
+    from ..sync import BACKFILL_DAYS, WINDOWED, backfill_done
     target = (date.today() - timedelta(days=BACKFILL_DAYS)).isoformat()
     accounts = []
     for a in conn.execute(
             """SELECT a.id, a.alias, coalesce(a.display_name, a.alias) AS name, a.institution, a.history_from,
+                      a.backfill_from, a.backfill_until, a.recent_cursor,
                       (SELECT min(booking_date) FROM transactions_raw WHERE account_id = a.id) AS oldest,
                       (SELECT max(at) FROM sync_results WHERE account_id = a.id AND skipped IS NULL) AS last_ok,
                       (SELECT max(ts) FROM api_requests WHERE account_id = a.id AND kind = 'transactions') AS last_request
@@ -348,9 +349,10 @@ def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
         accounts.append({"name": a["name"], "institution": a["institution"],
                          "last_ok": a["last_ok"] or a["last_request"], "oldest": a["oldest"],
                          # Banks fetched in windows fill in their history over several syncs.
-                         "backfilling": a["institution"] in WINDOWED and (
-                             a["history_from"] is None or a["history_from"] > target),
-                         "history_from": a["history_from"],
+                         "backfilling": a["institution"] in WINDOWED and not backfill_done(a),
+                         # Older history is fetched going forward from backfill_from: complete up to backfill_until.
+                         "backfill": {"from": a["backfill_from"], "until": a["backfill_until"], "to": a["history_from"],
+                                      "recent_pending": a["recent_cursor"]},
                          "last_skipped": last["skipped"] if last and last["skipped"] else None,
                          "last_skipped_at": last["at"] if last and last["skipped"] else None})
     run = conn.execute("SELECT started_at, status, error FROM sync_runs ORDER BY id DESC LIMIT 1").fetchone()

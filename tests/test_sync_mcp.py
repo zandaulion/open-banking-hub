@@ -10,7 +10,7 @@ from bankhub import ledger, sync
 from bankhub.db import connect_readonly
 from bankhub.enablebanking import EnableBanking
 
-from conftest import session, tx
+from conftest import store, session, tx
 
 
 @pytest.fixture
@@ -108,28 +108,52 @@ def test_mcp_tools_answer_from_clean_layer(conn, rules, tmp_path):
 
 
 def test_windowed_bank_fetches_history_over_several_syncs(conn, key_path):
-    """A bank that silently returns at most 20 transactions per request (like BRD)."""
+    """A bank that silently returns at most 20 transactions per request, no continuation key (like BRD,
+    which keeps the oldest 20). It refuses ranges over a year. Every sync makes a few requests and
+    keeps what it got, so the whole history arrives over several syncs."""
     from datetime import date as d, timedelta as td
     today = d.today()
-    all_txs = [tx("10", (today - td(days=i * 3)).isoformat(), ref=f"r{i}") for i in range(80)]   # 240 days
+    all_txs = [tx("10", (today - td(days=i * 3)).isoformat(), ref=f"r{i}") for i in range(240)]   # 720 days
+    asked = []
 
     def handler(request: httpx.Request):
         if request.url.path.endswith("/balances"):
             return httpx.Response(200, json={"balances": []})
         a, b = request.url.params["date_from"], request.url.params["date_to"]
-        inside = [t for t in all_txs if a <= t["booking_date"] <= b]
-        return httpx.Response(200, json={"transactions": inside[:20]})   # truncated, no continuation key
+        assert (d.fromisoformat(b) - d.fromisoformat(a)).days <= 365
+        asked.append(a)
+        inside = sorted((t for t in all_txs if a <= t["booking_date"] <= b), key=lambda t: t["booking_date"])
+        return httpx.Response(200, json={"transactions": inside[:20]})
 
     sync.register_session(conn, session("BRD", [("brd-ron", "RON", "CACC")]))
     acc = lambda: conn.execute("SELECT * FROM accounts").fetchone()
+    count = lambda: conn.execute("SELECT count(*) FROM transactions_raw").fetchone()[0]
     eb = EnableBanking("app", key_path, transport=httpx.MockTransport(handler))
     sync.sync_account(conn, eb, acc(), backfill=True)
-    stored = conn.execute("SELECT count(*) FROM transactions_raw").fetchone()[0]
-    # The recent 90 days plus one older 90-day window, every transaction despite the 20 cap.
-    assert stored == len([t for t in all_txs if t["booking_date"] >= (today - td(days=180)).isoformat()])
-    sync.sync_account(conn, eb, acc(), backfill=False, force=True)
-    assert conn.execute("SELECT count(*) FROM transactions_raw").fetchone()[0] == 80
-    assert acc()["history_from"] < (today - td(days=240)).isoformat()
+    assert len(asked) == sync.WINDOWED_REQUESTS_PER_RUN and count() > 0
+    assert asked[0] >= (today - td(days=sync.RECENT_DAYS)).isoformat()    # the recent part comes first
+    for _ in range(30):
+        if sync.backfill_done(acc()):
+            break
+        sync.sync_account(conn, eb, acc(), backfill=False, force=True)
+    assert count() == 240 and sync.backfill_done(acc())
+
+
+def test_unattended_sync_asks_for_90_days_at_most(conn, key_path):
+    """A quiet account's last payment can be months old; banks refuse an older start without the customer."""
+    from datetime import date as d, timedelta as td
+    sync.register_session(conn, session("ING", [("ing-ron", "RON", "CACC")]))
+    store(conn, "ing-ron", [tx("10", "2025-01-31")])
+    starts = []
+
+    def handler(request: httpx.Request):
+        if not request.url.path.endswith("/balances"):
+            starts.append(request.url.params.get("date_from"))
+        return httpx.Response(200, json={"balances": [], "transactions": []})
+    acc = conn.execute("SELECT * FROM accounts").fetchone()
+    sync.sync_account(conn, EnableBanking("app", key_path, transport=httpx.MockTransport(handler)), acc,
+                      backfill=False, force=True)
+    assert starts == [(d.today() - td(days=sync.RECENT_DAYS)).isoformat()]
 
 
 def test_rate_limit_skips_one_bank_without_failing_the_sync(conn, key_path):

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- BRD history now arrives in full. BRD returns at most 20 transactions per request, the oldest 20 of the
+  range asked for, so each request starts where the last one stopped and is saved straight away. A few
+  requests per sync fill in two years over several days, and a rate limit only pauses the work. Before,
+  an account linked with older code could get stuck at its first 20 transactions.
+- Unattended syncs never ask for more than the last 90 days. A quiet account's last payment can be months
+  old, and ING refused the older start (error 422).
+- Health shows how far the older history has got, and the sync log records the bank's reason when it
+  refuses a request.
 - Activity can show one account: tap an account on Accounts, then **See its payments**. The account
   shows as a chip that combines with search, month and category; own transfers stay in the list.
 

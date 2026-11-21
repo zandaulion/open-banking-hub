@@ -3,6 +3,7 @@
 import json
 import re
 import sqlite3
+import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
@@ -11,12 +12,14 @@ from .db import transaction, utcnow
 from .enablebanking import EnableBanking, EnableBankingError
 from .normalize import normalize, to_minor
 
-# Banks that cap a transaction list without offering a continuation key: fetch them in date windows,
-# splitting any window that comes back full.
+# Banks that cap a transaction list without offering a continuation key. A full answer holds the oldest
+# transactions of the range asked for, so they are fetched going forward from the last day reached.
 WINDOWED = {"BRD": 20}
-BACKFILL_DAYS = 730      # BRD rejects a single request spanning more than about a year
-WINDOW_DAYS = 90
-BACKFILL_WINDOWS_PER_RUN = 1   # older history, one window per sync, within the bank's daily request limit
+BACKFILL_DAYS = 730
+MAX_SPAN_DAYS = 364            # BRD rejects a single request spanning more than a year
+WINDOWED_REQUESTS_PER_RUN = 3  # transaction requests per account and sync, besides the balance
+# Unattended access (no customer present) reaches back 90 days at most; ING refuses anything older.
+RECENT_DAYS = 89
 
 # PSD2 allows about 4 unattended requests per account per day; keep headroom.
 DAILY_SYNC_LIMIT = 4
@@ -139,20 +142,39 @@ def _store_transactions(conn: sqlite3.Connection, account_id: int, txs: list[dic
     return new
 
 
-def fetch_window(eb: EnableBanking, uid: str, start: date, end: date, cap: int) -> list[dict]:
-    """All transactions between start and end from a bank that silently truncates long lists
-    (a full page means there may be more: split the window and ask again)."""
-    out: list[dict] = []
-    stack = [(start, end)]
-    while stack:
-        a, b = stack.pop()
-        txs = list(eb.transactions(uid, date_from=a.isoformat(), date_to=b.isoformat()))
-        if len(txs) >= cap and b > a:
-            mid = a + (b - a) / 2
-            stack += [(a, mid), (mid + timedelta(days=1), b)]
-            continue
-        out.extend(txs)
-    return out
+def _day(t: dict) -> date:
+    return date.fromisoformat((t.get("booking_date") or t.get("value_date") or t.get("transaction_date"))[:10])
+
+
+def fetch_forward(eb: EnableBanking, uid: str, start: date, end: date, cap: int, budget: list[int], save) -> bool:
+    """Fetches start..end from a bank that silently truncates long lists, a year at most per request.
+    A full answer is taken to hold the oldest transactions of the range (BRD lists them oldest first), so
+    the next request starts at the last day it reached; `save(txs, complete_until)` keeps each answer
+    with the first day not yet complete. A full answer listed newest first halves the range instead.
+    Returns whether the whole range was fetched within the request budget."""
+    cursor = start
+    while cursor <= end:
+        stop = min(end, cursor + timedelta(days=MAX_SPAN_DAYS))
+        while cursor <= stop:
+            if budget[0] <= 0:
+                return False
+            budget[0] -= 1
+            txs = list(eb.transactions(uid, date_from=cursor.isoformat(), date_to=stop.isoformat()))
+            days = [_day(t) for t in txs]
+            if len(txs) < cap:
+                save(txs, stop + timedelta(days=1))
+                cursor = stop + timedelta(days=1)
+            elif days[0] > days[-1] and stop > cursor:
+                # Listed newest first, so the missing part could be anywhere before: ask for half the range.
+                save(txs, cursor)
+                stop = cursor + (stop - cursor) / 2
+            else:
+                # The last day reached may continue past the cap: fetch it again (duplicates are dropped).
+                reached = max(days)
+                nxt = reached if reached > cursor else cursor + timedelta(days=1)
+                save(txs, nxt)
+                cursor = nxt
+    return True
 
 
 def _record(conn: sqlite3.Connection, account_id: int, calls: int, balance_calls: int, ts: str) -> None:
@@ -173,7 +195,10 @@ def _store_balances(conn, account, balances, ts) -> None:
 def sync_account(conn: sqlite3.Connection, eb: EnableBanking, account: sqlite3.Row, *,
                  backfill: bool, force: bool = False) -> AccountResult:
     result = AccountResult(alias=account["alias"])
-    if not backfill and not force and requests_last_24h(conn, account["id"]) >= DAILY_SYNC_LIMIT:
+    # Banks fetched in windows spend a few requests per sync on purpose; their own limit stops them, and the
+    # progress is kept.
+    if not backfill and not force and account["institution"] not in WINDOWED \
+            and requests_last_24h(conn, account["id"]) >= DAILY_SYNC_LIMIT:
         result.skipped = f"daily limit of {DAILY_SYNC_LIMIT} requests reached"
         return result
     run_started = utcnow()
@@ -193,7 +218,8 @@ def sync_account(conn: sqlite3.Connection, eb: EnableBanking, account: sqlite3.R
         if backfill:
             txs = list(eb.transactions(account["uid"], longest=True))
         else:
-            start = (date.fromisoformat(last) - timedelta(days=OVERLAP_DAYS)).isoformat() if last else None
+            start = max(date.fromisoformat(last) - timedelta(days=OVERLAP_DAYS),
+                        date.today() - timedelta(days=RECENT_DAYS)).isoformat() if last else None
             txs = list(eb.transactions(account["uid"], date_from=start, longest=start is None))
         with transaction(conn):
             _store_balances(conn, account, balances, run_started)
@@ -210,31 +236,59 @@ def sync_account(conn: sqlite3.Connection, eb: EnableBanking, account: sqlite3.R
 
 
 def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
-    """Recent transactions, then one older window of history; each window is saved as soon as it arrives,
-    so a rate limit part-way keeps everything fetched so far."""
+    """Recent transactions first, then older history going forward from two years back, a few requests
+    per sync. Every answer is saved with how far it got, so a rate limit or the request budget only
+    pauses the work until the next sync."""
     today = date.today()
-    fetched = new = 0
-    recent_from = date.fromisoformat(last) - timedelta(days=OVERLAP_DAYS) if last else today - timedelta(days=WINDOW_DAYS)
-    txs = fetch_window(eb, account["uid"], max(recent_from, today - timedelta(days=BACKFILL_DAYS)), today, cap)
-    with transaction(conn):
-        new += _store_transactions(conn, account["id"], txs)
-        if account["history_from"] is None:
-            conn.execute("UPDATE accounts SET history_from=? WHERE id=?", (recent_from.isoformat(), account["id"]))
-    fetched += len(txs)
-    oldest_wanted = today - timedelta(days=BACKFILL_DAYS)
-    history_from = date.fromisoformat(
-        conn.execute("SELECT history_from FROM accounts WHERE id=?", (account["id"],)).fetchone()[0])
-    for _ in range(BACKFILL_WINDOWS_PER_RUN):
-        if history_from <= oldest_wanted:
-            break
-        a = max(oldest_wanted, history_from - timedelta(days=WINDOW_DAYS))
-        txs = fetch_window(eb, account["uid"], a, history_from - timedelta(days=1), cap)
+    counts = [0, 0]
+    budget = [WINDOWED_REQUESTS_PER_RUN]
+    acc_id = account["id"]
+
+    def state():
+        return conn.execute("SELECT history_from, backfill_from, backfill_until, recent_until, recent_cursor"
+                            " FROM accounts WHERE id=?", (acc_id,)).fetchone()
+
+    def save(column, recent):
+        def _save(txs, complete_until):
+            with transaction(conn):
+                counts[1] += _store_transactions(conn, acc_id, txs, prune_pending=recent)
+                conn.execute(f"UPDATE accounts SET {column}=? WHERE id=?", (complete_until.isoformat(), acc_id))
+            counts[0] += len(txs)
+        return _save
+
+    row = state()
+    if row["recent_cursor"]:
+        start = date.fromisoformat(row["recent_cursor"])        # carry on where the last sync stopped
+    else:
+        earliest = today - timedelta(days=RECENT_DAYS)
+        # From the last complete sync (a quiet account has no recent transaction to go by).
+        since = row["recent_until"] or last
+        wanted = date.fromisoformat(since) - timedelta(days=OVERLAP_DAYS) if since else earliest
+        start = max(wanted, earliest)
         with transaction(conn):
-            new += _store_transactions(conn, account["id"], txs, prune_pending=False)
-            conn.execute("UPDATE accounts SET history_from=? WHERE id=?", (a.isoformat(), account["id"]))
-        fetched += len(txs)
-        history_from = a
-    return fetched, new
+            if row["history_from"] is None or wanted < earliest:
+                # First sync, or a gap older than unattended access reaches: the backfill fills it in.
+                conn.execute("UPDATE accounts SET history_from=? WHERE id=?", (start.isoformat(), acc_id))
+                if row["backfill_until"] and wanted < date.fromisoformat(row["backfill_until"]):
+                    conn.execute("UPDATE accounts SET backfill_until=? WHERE id=?",
+                                 (max(wanted.isoformat(), row["backfill_from"]), acc_id))
+            conn.execute("UPDATE accounts SET recent_cursor=? WHERE id=?", (start.isoformat(), acc_id))
+    if fetch_forward(eb, account["uid"], start, today, cap, budget, save("recent_cursor", True)):
+        conn.execute("UPDATE accounts SET recent_until=?, recent_cursor=NULL WHERE id=?", (today.isoformat(), acc_id))
+    row = state()
+    if row["backfill_from"] is None:
+        first = (today - timedelta(days=BACKFILL_DAYS)).isoformat()
+        conn.execute("UPDATE accounts SET backfill_from=?, backfill_until=? WHERE id=?", (first, first, acc_id))
+        row = state()
+    until, history = date.fromisoformat(row["backfill_until"]), date.fromisoformat(row["history_from"])
+    if until < history and budget[0] > 0:
+        fetch_forward(eb, account["uid"], until, history - timedelta(days=1), cap, budget, save("backfill_until", False))
+    return tuple(counts)
+
+
+def backfill_done(account) -> bool:
+    return bool(account["backfill_until"] and account["history_from"]
+                and account["backfill_until"] >= account["history_from"])
 
 
 def sync_all(conn: sqlite3.Connection, eb: EnableBanking, *, force: bool = False) -> SyncResult:
@@ -249,6 +303,7 @@ def sync_all(conn: sqlite3.Connection, eb: EnableBanking, *, force: bool = False
             try:
                 r = sync_account(conn, eb, acc, backfill=acc["backfilled_at"] is None, force=force)
             except EnableBankingError as e:
+                print(f"{acc['alias']}: {e}", file=sys.stderr)   # the bank's reason, for the journal
                 limited = "RATE_LIMIT" in str(e) or e.status == 429
                 r = AccountResult(alias=acc["alias"], skipped=(
                     "the bank's request limit was reached; it continues at the next sync" if limited

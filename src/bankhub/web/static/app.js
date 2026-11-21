@@ -1055,8 +1055,11 @@ function healthCard(hd) {
     let detail = a.last_ok ? `synced ${ago(a.last_ok)}` : 'never synced';
     if (a.last_skipped) detail = `skipped ${ago(a.last_skipped_at)}: limit`;
     const row = line(!stale && !a.last_skipped, `${a.institution} · ${a.name}`, detail);
+    const bf = a.backfill || {};
     if (a.backfilling) row.append(h('div', { class: 'row-sub' }, h('span', {},
-      `History back to ${a.oldest ? dayLabel(a.oldest) : '—'}, filling in towards ${dayLabel(hd.history_target)}`)));
+      bf.recent_pending ? `Fetching recent payments: done up to ${dayLabel(bf.recent_pending)}`
+      : bf.until && bf.to ? `Filling in older history: ${dayLabel(bf.from)} to ${dayLabel(bf.until)} done, until ${dayLabel(bf.to)}`
+      : 'Older history starts at the next sync')));
     return row;
   });
   const localOk = hd.backup_local && (Date.now() - new Date(hd.backup_local).getTime()) < 36 * 3.6e6;

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Laptop and desktop layout. From 900 px wide the tabs move to a sidebar, cards flow into columns (three
+  on very wide screens) and dialogs are centred. Month puts the figures beside a chart of up to 24 months,
+  with categories and payees side by side. Activity is a table (payee, description, category, account,
+  amount), and a payment opens in a panel beside it, so you can work down the list. Keys: ← and → change
+  month, / searches Activity, Esc closes. The phone layout is unchanged.
+
 ## 0.5.0 (2026-11-21)
 
 - The demo (`bankhub demo`) now includes a child's account in a group and a credit card added from three

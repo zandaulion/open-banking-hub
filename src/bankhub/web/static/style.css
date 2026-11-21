@@ -205,3 +205,58 @@ main#view { touch-action: pan-y; will-change: transform; }
 /* CSV import preview */
 .csv-preview { display: block; max-width: 100%; overflow-x: auto; font-size: 11px; border-collapse: collapse; margin-bottom: 8px; }
 .csv-preview td { border-bottom: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------------------------------------------------------------- wide screens (laptop, desktop)
+   The phone layout above is unchanged. From 900px: a sidebar for the tabs, cards in columns, centred
+   dialogs, and their own layouts for Month (a grid with a 24-month chart) and Activity (a table, with a
+   payment opening in a panel beside it). */
+.tx-head { display: none; }
+@media (min-width: 900px) {
+  body { padding-bottom: 24px; padding-left: 200px; }
+  .tabbar { top: 0; bottom: 0; right: auto; width: 200px; display: flex; flex-direction: column; gap: 2px;
+            padding: calc(64px + env(safe-area-inset-top)) 10px 0; border-top: 0; border-right: 1px solid var(--line); }
+  .tabbar a { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 12px; font-size: 14px; border-radius: 10px; }
+  .tabbar a .ico { width: 20px; text-align: center; }
+  .tabbar a[aria-current="page"] { background: var(--surface-2); }
+  .topbar { padding-left: 24px; padding-right: 24px; }
+  .topbar h1 { font-size: 22px; }
+  main { max-width: 1240px; padding: 4px 24px 32px; }
+  main#view { column-count: 2; column-gap: 14px; }
+  main#view > * { break-inside: avoid; }
+  main#view > :not(.card) { column-span: all; }
+
+  .sheet { border-radius: 18px; margin: auto; max-height: 88vh; overflow-y: auto; }
+  .sheet.panel { position: fixed; inset: 0 0 0 auto; z-index: 20; width: 440px; max-width: 440px; height: 100vh; max-height: 100vh;
+                 margin: 0; border-radius: 0; border-left: 1px solid var(--line); box-shadow: -10px 0 30px rgba(0,0,0,.18); }
+  body.panel-open main { margin-right: 440px; }
+
+  /* Month: the figures and the chart side by side, then categories and payees. */
+  main#view[data-layout="month"] { column-count: auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  main#view[data-layout="month"] > .card { margin: 0; }
+  .m-hero { grid-column: span 2; order: 1; }
+  .m-trend { grid-column: span 4; order: 2; }
+  .m-cats { grid-column: span 3; order: 3; }
+  .m-payees { grid-column: span 3; order: 4; }
+  .m-oneoffs, .m-groups { grid-column: span 3; order: 5; }
+  .m-foot { grid-column: 1 / -1; order: 9; }
+
+  /* Activity: one wide card, rows laid out as a table. */
+  main#view[data-layout="tx"] { column-count: auto; }
+  .tx-head, .tx-list li.tx .rowbtn { display: grid; grid-template-columns: minmax(140px, 1.3fr) minmax(0, 2fr) minmax(0, 1.2fr) minmax(90px, .8fr) 130px;
+                                      column-gap: 16px; align-items: baseline; }
+  .tx-head { padding: 6px 10px; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--line); }
+  .tx-head .amt, .tx-list li.tx .amt { text-align: right; }
+  .tx-list li.tx .row-head, .tx-list li.tx .row-sub { display: contents; }
+  .tx-list li.tx .rowbtn > * , .tx-list li.tx .row-head > *, .tx-list li.tx .row-sub > * { grid-row: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tx-list li.tx .name { grid-column: 1; }
+  .tx-list li.tx .desc { grid-column: 2; margin: 0; }
+  .tx-list li.tx .row-sub > :first-child { grid-column: 3; }
+  .tx-list li.tx .row-sub > :last-child { grid-column: 4; }
+  .tx-list li.tx .amt { grid-column: 5; }
+  .tx-list li.tx.sel .rowbtn { background: var(--surface-2); }
+  .tx-list li.tx .rowbtn:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+}
+@media (min-width: 1500px) {
+  main { max-width: 1440px; }
+  main#view { column-count: 3; }
+}

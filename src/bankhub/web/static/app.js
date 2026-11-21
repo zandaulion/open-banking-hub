@@ -311,6 +311,9 @@ const titleEl = document.getElementById('title');
 const actionsEl = document.getElementById('topbar-actions');
 const tabbar = document.getElementById('tabbar');
 const state = { month: thisMonth(), categories: null, scroll: {}, offline: false, usedOffline: false };
+// Laptop and desktop: a sidebar, cards in columns, and wide layouts for Month and Activity.
+const wide = matchMedia('(min-width: 900px)');
+wide.addEventListener('change', () => refresh());
 
 function parseHash() {
   const raw = location.hash.slice(1);
@@ -363,6 +366,8 @@ async function route() {
   for (const a of tabbar.querySelectorAll('a')) {
     if (a.dataset.tab === (TAB_OF[name] || name)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
+  state.panel = false;
+  view.dataset.layout = fn === renderMonth ? 'month' : name;
   try { await fn(params); tabbar.hidden = false; slideIn(); } catch (e) { fail(e); }
   if (!state.usedOffline) {
     showOnline();
@@ -529,7 +534,7 @@ async function renderMonth(params) {
     h('button', { class: 'chip icon', 'aria-label': 'Next month', disabled: isCurrent, onclick: () => { state.slideFrom = 'right'; go('month', { m: shiftMonth(m, 1) }, { replace: true }); } }, '›'));
 
   const over = d.left_ron < 0;
-  const hero = h('section', { class: 'card' },
+  const hero = h('section', { class: 'card m-hero' },
     nav,
     h('p', { class: 'eyebrow' }, 'Spent'),
     h('div', { class: 'hero num' }, nf0.format(d.spent_ron), h('small', {}, 'RON')),
@@ -541,7 +546,7 @@ async function renderMonth(params) {
       h('div', { class: 'tile' }, h('div', { class: 'label' }, 'Other money in'), h('div', { class: 'value num' }, nf0.format(d.other_in_ron)))),
     hasIncome ? '' : h('p', { class: 'faint', style: 'margin:10px 0 0;font-size:13px' }, 'Income shows once the account your salary arrives in is linked.'));
 
-  const oneOffs = d.one_offs.length ? h('section', { class: 'card' },
+  const oneOffs = d.one_offs.length ? h('section', { class: 'card m-oneoffs' },
     h('h2', {}, 'One-off this month'),
     h('p', { class: 'faint', style: 'margin:-4px 0 8px;font-size:13px' }, 'Very large payments, kept out of the totals above.'),
     h('ul', { class: 'rows' }, d.one_offs.map((o) => h('li', {},
@@ -556,7 +561,7 @@ async function renderMonth(params) {
     hasIncome ? h('span', {}, h('i', { class: 'sw left' }), 'Left over') : '',
     hasIncome ? h('span', {}, h('i', { class: 'sw over' }), 'Over income') : '',
     h('span', {}, h('b', { class: 'mk' }, '+12k'), 'one-off'));
-  const trend = h('section', { class: 'card' },
+  const trend = h('section', { class: 'card m-trend' },
     h('h2', {}, hasIncome ? 'Income and spending per month' : 'Spending per month'),
     legend,
     scrollChart(d.trend.map((t) => ({ ...t, on: t.month === m, short: monthShort(t.month)[0],
@@ -565,7 +570,7 @@ async function renderMonth(params) {
             hasIncome ? (t.outflow_ron > t.income_ron ? `over by ${ron(t.outflow_ron - t.income_ron)}` : `left ${ron(t.income_ron - t.outflow_ron)}`) : null,
             t.one_off_out_ron ? `one-off out ${ron(t.one_off_out_ron)}` : null,
             t.one_off_in_ron ? `one-off in ${ron(t.one_off_in_ron)}` : null].filter(Boolean).join(' · ') })),
-      { id: 'month-trend', label: 'Income and spending per month', dimOthers: false, band: false,
+      { id: 'month-trend', label: 'Income and spending per month', dimOthers: false, band: false, visible: wide.matches ? Math.max(14, Math.min(24, d.trend.length)) : 14,
         defs: () => {
           // Money left over is hatched, so it is not told apart from "over income" by colour alone.
           const pat = s('pattern', { id: 'left-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
@@ -593,13 +598,15 @@ async function renderMonth(params) {
             svg.append(s('rect', { x: g.x - 2, y: g.base - top_ - 2, width: g.bw + 4, height: top_ + 2, rx: 5, class: 'selbar' }));
           }
         } }),
-    h('p', { class: 'chart-note' }, 'Tap a month to open it, or swipe the page left and right · scroll the chart for older months · dashed: incomplete month'),
+    h('p', { class: 'chart-note' }, wide.matches
+      ? 'Click a month to open it, or use the ← and → keys · scroll the chart for older months · dashed: incomplete month'
+      : 'Tap a month to open it, or swipe the page left and right · scroll the chart for older months · dashed: incomplete month'),
     tableToggle(d.trend.map((t) => [monthLabel(t.month) + (t.partial ? ' (incomplete)' : ''), nf0.format(t.income_ron), nf0.format(t.outflow_ron),
       nf0.format(t.income_ron - t.outflow_ron), t.one_off_out_ron || t.one_off_in_ron ? nf0.format(t.one_off_in_ron - t.one_off_out_ron) : '—']),
       ['Month', 'Income', 'Spent', 'Left', 'One-off']));
 
   const maxCat = Math.max(1, ...d.categories.map((c) => c.outflow_ron));
-  const cats = h('section', { class: 'card' }, h('h2', {}, 'By category'),
+  const cats = h('section', { class: 'card m-cats' }, h('h2', {}, 'By category'),
     d.categories.length ? h('ul', { class: 'rows' }, d.categories.map((c) => h('li', {},
       h('button', { class: 'rowbtn', onclick: () => go('tx', { m, category: c.category }) },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, pretty(c.category)), h('span', { class: 'amt num' }, ron(c.outflow_ron))),
@@ -607,13 +614,13 @@ async function renderMonth(params) {
         h('div', { class: 'row-sub' }, h('span', {}, `${c.n} payment${c.n === 1 ? '' : 's'}${c.refunds_ron ? ` · ${ron(c.refunds_ron)} refunded` : ''}`),
           h('span', {}, deltaSpan(pctChange(c.outflow_ron, c.previous_ron)), ` vs ${ron(c.previous_ron)}`)))))) : h('p', { class: 'muted' }, 'No spending this month.'));
 
-  const payees = h('section', { class: 'card' }, h('h2', {}, 'Top payees'),
+  const payees = h('section', { class: 'card m-payees' }, h('h2', {}, 'Top payees'),
     h('ul', { class: 'rows' }, d.payees.map((p) => h('li', {},
       h('button', { class: 'rowbtn', onclick: () => go('tx', { m, q: p.payee }) },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, p.payee), h('span', { class: 'amt num' }, ron(p.outflow_ron))),
         h('div', { class: 'row-sub' }, h('span', {}, pretty(p.category)), h('span', {}, `${p.n}×`)))))));
 
-  const people = d.groups && d.groups.length ? h('section', { class: 'card' }, h('h2', {}, 'Groups'),
+  const people = d.groups && d.groups.length ? h('section', { class: 'card m-groups' }, h('h2', {}, 'Groups'),
     h('ul', { class: 'rows' }, d.groups.map((g) => h('li', {},
       h('div', { class: 'row-head' }, h('span', { class: 'name' }, g.name), h('span', { class: 'amt num' }, ron(g.sent_ron))),
       h('div', { class: 'row-sub' }, h('span', {}, g.behaviour === 'separate' && g.category === 'transfers' ? 'not counted'
@@ -621,7 +628,7 @@ async function renderMonth(params) {
         h('span', {}, g.back_ron ? `${ron(g.back_ron)} back` : `${g.n}×`)))))) : '';
 
   view.replaceChildren(hero, oneOffs, trend, cats, people, payees,
-    h('p', { class: 'faint center-text' }, `Booked transactions only · newest ${d.newest_transaction || '—'}`));
+    h('p', { class: 'faint center-text m-foot' }, `Booked transactions only · newest ${d.newest_transaction || '—'}`));
 }
 
 // ---------------------------------------------------------------- recurring
@@ -694,8 +701,12 @@ async function renderTransactions(params) {
     filters.category ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: () => go('tx', clean({ ...filters, category: '' }), { replace: true }) }, `${pretty(filters.category)} ✕`) : '',
     filters.kind ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: () => go('tx', clean({ ...filters, kind: '' }), { replace: true }) }, `${KINDS[filters.kind] || filters.kind} ✕`) : '',
     accountChip);
-  const list = h('ul', { class: 'rows' });
+  const list = h('ul', { class: 'rows tx-list' });
   const more = h('button', { class: 'btn', style: 'width:100%;margin-top:10px' }, 'Load more');
+  // On a wide screen the list is a table, and a payment opens beside it instead of over it.
+  state.panel = wide.matches;
+  const head = h('div', { class: 'tx-head' }, h('span', {}, 'Payee'), h('span', {}, 'Description'), h('span', {}, 'Category'),
+    h('span', {}, 'Account'), h('span', { class: 'amt' }, 'Amount'));
   const count = h('p', { class: 'faint', style: 'margin:0 0 8px' });
   let offset = 0, lastDay = null;
   async function load() {
@@ -714,18 +725,24 @@ async function renderTransactions(params) {
       if (t.kind === 'refund') tags.push('refund');
       if (t.status === 'pending') tags.push('pending');
       if (t.overridden) tags.push('changed by you');
-      list.append(h('li', { class: 'tx' }, h('button', { class: 'rowbtn', onclick: () => openTxSheet(t, () => refresh()).catch(fail) },
+      const li = h('li', { class: 'tx' });
+      list.append(li);
+      li.append(h('button', { class: 'rowbtn', onclick: () => {
+        for (const x of list.querySelectorAll('li.tx.sel')) x.classList.remove('sel');
+        li.classList.add('sel');
+        openTxSheet(t, () => refresh()).catch(fail);
+      } },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, t.payee || '—'),
           h('span', { class: `amt num ${t.amount > 0 ? 'credit' : ''}` }, `${t.amount > 0 ? '+' : ''}${money(t.amount, t.currency)}`)),
         t.description && t.description !== t.payee ? h('div', { class: 'desc' }, t.description) : '',
-        h('div', { class: 'row-sub' }, h('span', {}, tags.join(' · ')), h('span', {}, t.account_name || t.account_alias)))));
+        h('div', { class: 'row-sub' }, h('span', {}, tags.join(' · ')), h('span', {}, t.account_name || t.account_alias))));
     }
     offset += d.transactions.length;
     more.hidden = offset >= d.total;
   }
   more.addEventListener('click', () => load().catch(fail));
   state.loadMore = async () => { if (more.hidden) return false; await load(); return true; };
-  view.replaceChildren(h('section', { class: 'card' }, search, chips, count, list, more));
+  view.replaceChildren(h('section', { class: 'card' }, search, chips, count, head, list, more));
   await load();
 }
 const KINDS = { one_off: 'One-off', income: 'Income', other_in: 'Other money in', refund: 'Refunds' };
@@ -765,13 +782,37 @@ function categoryPicker(categories, current = '', currentSub = '') {
 }
 function sheetOpen(...children) {
   const sheet = document.getElementById('sheet');
+  // On a wide Activity screen a payment opens in a panel beside the list, which stays usable: the next
+  // payment replaces it in place.
+  const panel = state.panel && wide.matches;
+  const already = sheet.open && sheet.classList.contains('panel');
+  sheet.classList.toggle('panel', panel);
+  document.body.classList.toggle('panel-open', panel);
   sheet.replaceChildren(...children);
-  sheet.showModal();
-  history.pushState({ sheet: true }, '');
+  if (panel) { if (!sheet.open) sheet.show(); } else sheet.showModal();
+  if (!already) history.pushState({ sheet: true }, '');
   return sheet;
 }
 // Closing a sheet any way (button, Escape, a save) drops its history entry; Back closes an open sheet.
-document.getElementById('sheet').addEventListener('close', () => { if (history.state && history.state.sheet) history.back(); });
+document.getElementById('sheet').addEventListener('close', () => {
+  document.body.classList.remove('panel-open');
+  for (const x of document.querySelectorAll('li.tx.sel')) x.classList.remove('sel');
+  if (history.state && history.state.sheet) history.back();
+});
+// Keyboard, for laptops: Esc closes, ← and → change month, / searches Activity.
+addEventListener('keydown', (e) => {
+  const sheet = document.getElementById('sheet');
+  if (e.key === 'Escape' && sheet.open) { sheet.close(); return; }
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, textarea') || (sheet.open && !sheet.classList.contains('panel'))) return;
+  const { name } = parseHash();
+  if (name === 'month' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    const btn = document.querySelector(`.month-nav button[aria-label="${e.key === 'ArrowLeft' ? 'Previous' : 'Next'} month"]`);
+    if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+  } else if (name === 'tx' && e.key === '/') {
+    e.preventDefault();
+    document.querySelector('input.search')?.focus();
+  }
+});
 addEventListener('popstate', () => {
   const sheet = document.getElementById('sheet');
   if (sheet.open && !(history.state && history.state.sheet)) sheet.close();

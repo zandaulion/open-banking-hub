@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 (2026-11-21)
 
 - Laptop and desktop layout. From 900 px wide the tabs move to a sidebar, cards flow into columns (three
   on very wide screens) and dialogs are centred. Month puts the figures beside a chart of up to 24 months,

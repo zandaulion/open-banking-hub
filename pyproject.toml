@@ -1,6 +1,6 @@
 [project]
 name = "bankhub"
-version = "0.5.0"
+version = "0.6.0"
 description = "Self-hosted, read-only view of your own bank accounts (Enable Banking PSD2), with a phone app and a redacted MCP server"
 readme = "README.md"
 license = "MIT"

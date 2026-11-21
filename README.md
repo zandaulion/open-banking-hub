@@ -176,8 +176,9 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
 - **Statements**: add a monthly statement (PDF) or a CSV from any bank. A credit card that open banking
   does not share is read from its statements, and an account's history fills in at once instead of over days
   (see [docs/BANKS.md](docs/BANKS.md#statements)).
-- **On a laptop**: a sidebar, cards in columns, Month with a 24-month chart, and Activity as a table with
-  the payment in a side panel. ← and → change month, / searches.
+- **On a laptop**: a sidebar and wide layouts: Month with the chart beside the figures, Activity and
+  Recurring as tables, Accounts in three columns, and a payment or a payee opening in a side panel.
+  ← and → change month, / searches.
 - **Offline**: every screen keeps a copy on the phone, and on Wi-Fi the app saves all months,
   Recurring, Accounts and recent payments ahead of time. Without the server it shows that copy, with a
   banner saying when it was saved; changes wait for the server. Copies older than 14 days are deleted,

@@ -5,8 +5,13 @@
 - Laptop and desktop layout. From 900 px wide the tabs move to a sidebar, cards flow into columns (three
   on very wide screens) and dialogs are centred. Month puts the figures beside a chart of up to 24 months,
   with categories and payees side by side. Activity is a table (payee, description, category, account,
-  amount), and a payment opens in a panel beside it, so you can work down the list. Keys: ← and → change
-  month, / searches Activity, Esc closes. The phone layout is unchanged.
+  amount), and a payment opens in a panel beside it, so you can work down the list. Recurring puts the
+  totals beside the chart and the payments in a table (when, change, a sparkline, the last amount) beside
+  the income. Accounts has three columns: what you have, other people's money and cards, and the
+  connections, health and alerts. On Sort and My rules a payee or rule opens beside the list. Charts are
+  drawn to the width of their card, so text keeps its size on a big screen. Between 900 and 1199 px the
+  grids are half and half. Keys: ← and → change month, / searches Activity, Esc closes. The phone layout
+  is unchanged.
 
 ## 0.5.0 (2026-11-21)
 

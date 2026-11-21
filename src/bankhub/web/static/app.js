@@ -199,10 +199,15 @@ function barPath(x, y, w, hgt, r) {
 // The chart keeps its scroll position across re-renders; selecting a month never moves it, unless
 // the selected month would otherwise be off-screen (then it scrolls just enough to show it).
 function scrollChart(points, { id, visible = 14, height = 150, onTap, label = 'Chart', allAccent = false,
-                                maxOf = (p) => p.value, draw = null, labelOf = null, dimOthers = true, band = true, defs = null } = {}) {
+                                maxOf = (p) => p.value, draw = null, labelOf = null, dimOthers = true, band = true, defs = null,
+                                fitPx = null } = {}) {
+  // `fitPx`: the width the chart will have on screen (wide layouts). Columns are sized to it, so text and
+  // bars keep their size instead of the whole drawing being scaled up; months beyond what fits scroll.
+  const n = points.length;
+  if (fitPx) visible = Math.max(1, Math.min(n, Math.floor(fitPx / 26)));
   // Room above the bars for the year labels, and for value marks when there are any.
-  const STEP = 24, top = labelOf ? 32 : 18, bottom = 20, gap = 2, H = height + (labelOf ? 14 : 0);
-  const n = points.length, cols = Math.max(n, visible), W = cols * STEP;
+  const STEP = fitPx ? fitPx / visible : 24, top = labelOf ? 32 : 18, bottom = 20, gap = 2, H = height + (labelOf ? 14 : 0);
+  const cols = Math.max(n, visible), W = cols * STEP;
   const max = Math.max(1, ...points.map(maxOf));
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img', 'aria-label': label });
   svg.style.width = `${(cols / visible) * 100}%`;
@@ -313,7 +318,16 @@ const tabbar = document.getElementById('tabbar');
 const state = { month: thisMonth(), categories: null, scroll: {}, offline: false, usedOffline: false };
 // Laptop and desktop: a sidebar, cards in columns, and wide layouts for Month and Activity.
 const wide = matchMedia('(min-width: 900px)');
+// The inner width of a card spanning `span` of the six grid columns of a wide layout (see style.css).
+function wideCardPx(span) {
+  const content = Math.min(innerWidth >= 1500 ? 1440 : 1240, innerWidth - 200) - 48;
+  const col = (content - 5 * 14) / 6;
+  return Math.floor(col * span + 14 * (span - 1) - 34);
+}
 wide.addEventListener('change', () => refresh());
+// Charts are sized to their card, so a change of grid (see style.css) redraws.
+for (const q of ['(min-width: 1200px)', '(min-width: 1500px)']) matchMedia(q).addEventListener('change', () => refresh());
+const chartSpan = () => (innerWidth >= 1200 ? 4 : 3);
 
 function parseHash() {
   const raw = location.hash.slice(1);
@@ -570,7 +584,7 @@ async function renderMonth(params) {
             hasIncome ? (t.outflow_ron > t.income_ron ? `over by ${ron(t.outflow_ron - t.income_ron)}` : `left ${ron(t.income_ron - t.outflow_ron)}`) : null,
             t.one_off_out_ron ? `one-off out ${ron(t.one_off_out_ron)}` : null,
             t.one_off_in_ron ? `one-off in ${ron(t.one_off_in_ron)}` : null].filter(Boolean).join(' · ') })),
-      { id: 'month-trend', label: 'Income and spending per month', dimOthers: false, band: false, visible: wide.matches ? Math.max(14, Math.min(24, d.trend.length)) : 14,
+      { id: 'month-trend', label: 'Income and spending per month', dimOthers: false, band: false, fitPx: wide.matches ? wideCardPx(chartSpan()) : null,
         defs: () => {
           // Money left over is hatched, so it is not told apart from "over income" by colour alone.
           const pat = s('pattern', { id: 'left-hatch', width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
@@ -636,7 +650,7 @@ async function renderRecurring() {
   setTitle('Recurring');
   const d = await api('recurring');
   const tm = d.this_month;
-  const summary = h('section', { class: 'card' },
+  const summary = h('section', { class: 'card r-summary' },
     h('p', { class: 'eyebrow' }, 'Regular payments'),
     h('div', { class: 'hero num' }, nf0.format(d.active_monthly_total_ron), h('small', {}, 'RON / month')),
     h('div', { class: 'delta' }, `${ron(d.active_annual_total_ron)} a year`),
@@ -647,21 +661,22 @@ async function renderRecurring() {
     h('p', { class: 'faint', style: 'margin:10px 0 0;font-size:13px' },
       `Latest ${d.bills_change.bills} monthly bills: ${ron(d.bills_change.latest_total_ron, 2)}, previous bills ${ron(d.bills_change.previous_total_ron, 2)}.`));
 
-  const chart = h('section', { class: 'card' },
+  const chart = h('section', { class: 'card r-chart' },
     h('h2', {}, 'Recurring payments per month'),
     scrollChart(d.totals_by_month.map((t, i, a) => {
       const prev = i ? a[i - 1].amount_ron : null;
       const ch = t.partial ? null : pctChange(t.amount_ron, prev);
       return { value: t.amount_ron, partial: t.partial, month: t.month, short: monthShort(t.month)[0],
                tip: `${monthLabel(t.month)}${t.partial ? (t.month === thisMonth() ? ' (so far)' : ' (history starts mid-month)') : ''}: ${ron(t.amount_ron)}${ch === null ? '' : ` (${ch > 0 ? '+' : ''}${ch.toFixed(0)}% MoM)`}` };
-    }), { id: 'recurring-trend', label: 'Recurring payments per calendar month', allAccent: true }),
+    }), { id: 'recurring-trend', label: 'Recurring payments per calendar month', allAccent: true,
+          fitPx: wide.matches ? wideCardPx(chartSpan()) : null }),
     h('p', { class: 'chart-note' }, 'By calendar month · scroll for older months · dashed: incomplete month'),
     tableToggle(d.totals_by_month.map((t, i, a) => {
       const ch = i ? pctChange(t.amount_ron, a[i - 1].amount_ron) : null;
       return [monthLabel(t.month) + (t.partial ? ' (incomplete)' : ''), nf0.format(t.amount_ron), ch === null || t.partial ? '—' : `${ch > 0 ? '+' : ''}${ch.toFixed(0)}%`];
     }), ['Month', 'RON', 'MoM']));
 
-  const incomeCard = h('section', { class: 'card' }, h('h2', {}, 'Regular income'),
+  const incomeCard = h('section', { class: 'card r-income' }, h('h2', {}, 'Regular income'),
     d.income.length ? h('ul', { class: 'rows' }, d.income.map((x) => {
       const c = x.change;
       return h('li', {},
@@ -669,7 +684,9 @@ async function renderRecurring() {
         h('div', { class: 'row-sub' }, h('span', {}, `${pretty(x.cadence)} · next ${dayLabel(x.next_expected)}`, x.status === 'missed' ? h('span', { class: 'badge warn', style: 'margin-left:6px' }, '⚠ late') : ''),
           c ? h('span', {}, deltaSpan(c.change_pct, { invert: true }), ` ${c.basis}`) : ''));
     })) : h('p', { class: 'muted', style: 'margin:0' }, 'Salary shows here once the account it arrives in is linked.'));
-  const list = h('section', { class: 'card' }, h('h2', {}, 'Payments'),
+  const list = h('section', { class: 'card r-list' }, h('h2', {}, 'Payments'),
+    h('div', { class: 'series-head' }, h('span', {}, 'Payment'), h('span', {}, 'When'), h('span', {}, 'Change'),
+      h('span', {}, 'By month'), h('span', { class: 'amt' }, 'Last')),
     h('ul', { class: 'rows' }, d.series.map((x) => {
       const c = x.change;
       const changeEl = c ? h('span', {}, deltaSpan(c.change_pct), ` ${c.basis} · was ${ron(c.previous_ron, 2)}`) : h('span', { class: 'faint' }, 'first charge');
@@ -677,9 +694,9 @@ async function renderRecurring() {
         h('div', { class: 'series' },
           h('div', { class: 'row-head' }, h('span', { class: 'name' }, x.payee || x.merchant)),
           h('span', { class: 'amt num' }, money(x.last_amount, x.currency)),
-          h('div', { class: 'row-sub', style: 'grid-column:1/-1' },
+          h('div', { class: 'row-sub series-when' },
             h('span', {}, `${pretty(x.cadence)} · next ${dayLabel(x.next_expected)}`, x.status === 'missed' ? h('span', { class: 'badge warn', style: 'margin-left:6px' }, '⚠ missed') : '')),
-          h('div', { class: 'row-sub', style: 'grid-column:1/-1;justify-content:flex-start' }, changeEl),
+          h('div', { class: 'row-sub series-change' }, changeEl),
           h('div', { class: 'spark' }, sparkline(x.history.map((p) => ({ value: p.amount_ron, tip: `${monthLabel(p.month)}: ${ron(p.amount_ron, 2)}` }))))));
     })),
     h('p', { class: 'faint', style: 'margin:10px 0 0;font-size:13px' }, 'MoM compares each bill with the previous one; annual payments compare year over year.'));
@@ -727,11 +744,7 @@ async function renderTransactions(params) {
       if (t.overridden) tags.push('changed by you');
       const li = h('li', { class: 'tx' });
       list.append(li);
-      li.append(h('button', { class: 'rowbtn', onclick: () => {
-        for (const x of list.querySelectorAll('li.tx.sel')) x.classList.remove('sel');
-        li.classList.add('sel');
-        openTxSheet(t, () => refresh()).catch(fail);
-      } },
+      li.append(h('button', { class: 'rowbtn', onclick: (e) => { markSelected(e); openTxSheet(t, () => refresh()).catch(fail); } },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, t.payee || '—'),
           h('span', { class: `amt num ${t.amount > 0 ? 'credit' : ''}` }, `${t.amount > 0 ? '+' : ''}${money(t.amount, t.currency)}`)),
         t.description && t.description !== t.payee ? h('div', { class: 'desc' }, t.description) : '',
@@ -756,8 +769,9 @@ async function renderInbox() {
     h('p', { class: 'eyebrow' }, 'Uncategorized'),
     h('div', { class: 'hero num' }, `${d.uncategorized_share_pct}`, h('small', {}, '% of spending')),
     h('p', { class: 'muted', style: 'margin:8px 0 0' }, `${d.remaining} payee${d.remaining === 1 ? '' : 's'} to sort. Tap one to give it a category. Leave "Show name" off for local shops and people: the name then stays on this server and AI assistants only see the category.`));
+  state.panel = wide.matches;
   const list = h('section', { class: 'card' }, h('ul', { class: 'rows' }, d.items.map((it) => h('li', {},
-    h('button', { class: 'rowbtn', onclick: () => openRuleSheet(it, d.categories) },
+    h('button', { class: 'rowbtn', onclick: (e) => { markSelected(e); openRuleSheet(it, d.categories); } },
       h('div', { class: 'row-head' }, h('span', { class: 'name' }, it.example), h('span', { class: 'amt num' }, ron(it.outflow_ron))),
       h('div', { class: 'row-sub' }, h('span', {}, `${it.n}× · last ${dayLabel(it.last_date)}`), h('span', {}, it.bank_transfer ? 'bank transfer' : 'card')))))));
   view.replaceChildren(intro, d.items.length ? list : h('p', { class: 'muted center-text' }, 'Nothing left to sort.'));
@@ -780,6 +794,11 @@ function categoryPicker(categories, current = '', currentSub = '') {
     value: () => ({ category: cat.value === '__new' ? slug(newCat.value) : cat.value, subcategory: slug(sub.value) || null }),
   };
 }
+// The row whose details are open in the side panel.
+function markSelected(e) {
+  for (const x of document.querySelectorAll('li.sel')) x.classList.remove('sel');
+  e.currentTarget.closest('li')?.classList.add('sel');
+}
 function sheetOpen(...children) {
   const sheet = document.getElementById('sheet');
   // On a wide Activity screen a payment opens in a panel beside the list, which stays usable: the next
@@ -796,7 +815,7 @@ function sheetOpen(...children) {
 // Closing a sheet any way (button, Escape, a save) drops its history entry; Back closes an open sheet.
 document.getElementById('sheet').addEventListener('close', () => {
   document.body.classList.remove('panel-open');
-  for (const x of document.querySelectorAll('li.tx.sel')) x.classList.remove('sel');
+  for (const x of document.querySelectorAll('li.sel')) x.classList.remove('sel');
   if (history.state && history.state.sheet) history.back();
 });
 // Keyboard, for laptops: Esc closes, ← and → change month, / searches Activity.
@@ -856,13 +875,14 @@ async function renderRules() {
     view.replaceChildren(h('p', { class: 'muted center-text' }, 'No rules yet. Sort a payee, or recategorize a payment from Activity.'));
     return;
   }
+  state.panel = wide.matches;
   const groups = new Map();
   for (const r of d.rules) { if (!groups.has(r.category)) groups.set(r.category, []); groups.get(r.category).push(r); }
   view.replaceChildren(
     h('p', { class: 'muted', style: 'margin:4px 2px 12px' }, 'Your rules are checked before the built-in ones. Tap one to change or delete it; everything is re-sorted straight away.'),
     ...[...groups].map(([cat, rules]) => h('section', { class: 'card' }, h('h2', {}, pretty(cat)),
       h('ul', { class: 'rows' }, rules.map((r) => h('li', {},
-        h('button', { class: 'rowbtn', onclick: () => openRuleEditor(r, d.categories) },
+        h('button', { class: 'rowbtn', onclick: (e) => { markSelected(e); openRuleEditor(r, d.categories); } },
           h('div', { class: 'row-head' }, h('span', { class: 'name' }, r.name || r.patterns.join(', ')),
             h('span', { class: 'amt num' }, r.matches ? ron(r.outflow_ron) : '')),
           h('div', { class: 'row-sub' },
@@ -1496,7 +1516,9 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
-  view.replaceChildren(total, cardsCard, ...groupCards, newGroup, statementCard, banks, healthCard(d.health), alertsCard(), link);
+  // Wide: what you have | other people's money and cards | the connections and the app itself.
+  const columns = [[total, statementCard], [cardsCard, ...groupCards, newGroup], [banks, healthCard(d.health), alertsCard(), link]];
+  view.replaceChildren(...(wide.matches ? columns.map((c) => h('div', { class: 'col' }, ...c)) : columns.flat()));
 }
 
 offlinePrune();

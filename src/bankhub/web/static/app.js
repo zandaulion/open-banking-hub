@@ -682,6 +682,7 @@ async function renderTransactions(params) {
       if (t.is_internal_transfer) tags.push('own transfer');
       if (t.is_recurring) tags.push('recurring');
       if (t.is_one_off) tags.push('one-off');
+      if (t.kind === 'dependent') tags.push("child's account · not counted");
       if (t.kind === 'refund') tags.push('refund');
       if (t.status === 'pending') tags.push('pending');
       if (t.overridden) tags.push('changed by you');
@@ -1061,12 +1062,20 @@ function openRenameSheet(a) {
   let sheet;
   save.addEventListener('click', async () => {
     save.disabled = true;
-    try { await api(`accounts/${encodeURIComponent(a.alias)}/name`, { method: 'POST', body: { name: input.value } }); sheet.close(); refresh(); }
+    try {
+      await api(`accounts/${encodeURIComponent(a.alias)}/name`, { method: 'POST', body: { name: input.value } });
+      if (role.value !== (a.role || 'own')) await api(`accounts/${encodeURIComponent(a.alias)}/role`, { method: 'POST', body: { role: role.value } });
+      sheet.close(); refresh();
+    }
     catch (e) { msg.textContent = e.message; save.disabled = false; }
   });
+  const role = h('select', {}, h('option', { value: 'own', selected: a.role !== 'dependent' }, 'Mine: counted in my totals'),
+    h('option', { value: 'dependent', selected: a.role === 'dependent' }, "A child's account: not in my totals"));
   sheet = sheetOpen(h('h2', {}, a.name),
     h('p', { class: 'muted', style: 'margin:4px 0 0' }, `${a.institution} · ${a.currency}${a.history_from ? ` · history from ${dayLabel(a.history_from)}` : ''}`),
-    h('label', { class: 'field' }, 'Name (leave empty for the default)', input), msg,
+    h('label', { class: 'field' }, 'Name (leave empty for the default)', input),
+    h('label', { class: 'field' }, 'This account is', role,
+      h('span', { class: 'faint', style: 'font-size:12px' }, "For a child's account, what you send it counts as an allowance and what comes back as money in.")), msg,
     h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => sheet.close() }, 'Cancel'), save));
 }
 
@@ -1088,12 +1097,20 @@ async function renderAccounts(params) {
     h('p', { class: 'eyebrow' }, 'All accounts'),
     h('div', { class: 'hero num' }, nf0.format(b.total_ron), h('small', {}, 'RON')),
     b.total_eur ? h('div', { class: 'delta' }, `≈ ${nf0.format(b.total_eur)} EUR at the BNR rate`) : '',
-    h('ul', { class: 'rows', style: 'margin-top:12px' }, b.accounts.map((a) => h('li', {},
+    h('ul', { class: 'rows', style: 'margin-top:12px' }, b.accounts.filter((a) => a.role !== 'dependent').map((a) => h('li', {},
       h('button', { class: 'rowbtn', onclick: () => openRenameSheet(a) },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, a.name), h('span', { class: 'amt num' }, money(a.amount, a.currency))),
         h('div', { class: 'row-sub' }, h('span', {}, `${a.institution}${a.name !== a.alias ? ` · ${a.alias}` : ''}`),
           h('span', {}, a.currency !== 'RON' ? ron(a.amount_ron) : '')))))),
-    h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, 'Tap an account to rename it. Names stay in this app; AI assistants see the neutral label.'));
+    h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, 'Tap an account to rename it, or to mark it as a child\'s account. Names stay in this app; AI assistants see the neutral label.'));
+  const kidsList = b.accounts.filter((a) => a.role === 'dependent');
+  const kids = kidsList.length ? h('section', { class: 'card' },
+    h('h2', {}, "Kids' accounts"),
+    h('p', { class: 'faint', style: 'margin:-4px 0 8px;font-size:13px' }, `${ron(b.dependent_total_ron)} in total, not part of yours. What you send them counts as Kids · allowance; their own payments are not in your totals.`),
+    h('ul', { class: 'rows' }, kidsList.map((a) => h('li', {},
+      h('button', { class: 'rowbtn', onclick: () => openRenameSheet(a) },
+        h('div', { class: 'row-head' }, h('span', { class: 'name' }, a.name), h('span', { class: 'amt num' }, money(a.amount, a.currency))),
+        h('div', { class: 'row-sub' }, h('span', {}, `${a.institution} · ${a.alias}`))))))) : '';
 
   const syncBtn = h('button', { class: 'btn', disabled: !!state.offline }, state.offline ? 'Sync needs the server' : 'Sync now');
   const syncMsg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
@@ -1134,7 +1151,7 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
-  view.replaceChildren(total, banks, healthCard(d.health), alertsCard(), link);
+  view.replaceChildren(total, kids, banks, healthCard(d.health), alertsCard(), link);
 }
 
 offlinePrune();

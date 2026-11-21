@@ -64,6 +64,7 @@ Every transaction has a **category** (groceries, utilities, loans…) and a **ki
 | `other_in` | other money in (people paying you back, unknown) | other money in |
 | `one_off` | at or above the one-off threshold, or marked by hand | kept out of totals, shown apart |
 | `internal` | a move between your own accounts | nothing |
+| `dependent` | a payment on a child's account | nothing (shown, not counted) |
 
 Categories come from the first rule that matches, in this order:
 
@@ -75,6 +76,13 @@ Categories come from the first rule that matches, in this order:
 Bank transfers are matched on the counterparty name only, never on the free-text message, which
 can contain anyone's name. Merchants whose names are also first names are `card_only`. Your own
 rules are checked before the packaged ones. Per-transaction overrides win over everything.
+
+## Kids' accounts
+
+An account marked `dependent` (a child's) is shown but not counted. Money between it and your accounts is
+found by shared reference, its IBAN, the same amount in opposite directions within two days, and the
+counterparty names seen in those matches. What you send is spending (*kids · allowance*), what comes back
+is other money in. Its balance is reported apart from your total.
 
 ## Recurring payments and income
 

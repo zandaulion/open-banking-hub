@@ -203,6 +203,12 @@ def accounts(conn: sqlite3.Connection) -> dict:
     return {"balances": balances, "status": queries.sync_status(conn)}
 
 
+def set_account_role(conn: sqlite3.Connection, alias: str, role: str) -> bool:
+    if role not in ("own", "dependent"):
+        raise ValueError("role must be 'own' or 'dependent'")
+    return conn.execute("UPDATE accounts SET role=? WHERE alias=?", (role, alias)).rowcount > 0
+
+
 def rename_account(conn: sqlite3.Connection, alias: str, name: str | None) -> bool:
     name = (name or "").strip()[:40] or None
     return conn.execute("UPDATE accounts SET display_name=? WHERE alias=?", (name, alias)).rowcount > 0
@@ -245,7 +251,8 @@ def inbox(conn: sqlite3.Connection, limit: int = 40) -> dict:
     for name, desc, ron, day, has_acct in conn.execute(
             """SELECT t.counterparty_name, t.remittance, c.amount_ron, c.booking_date, t.counterparty_has_account
                FROM transactions_clean c JOIN transactions_raw t ON t.id = c.id
-               WHERE c.category = 'uncategorized' AND c.direction = 'debit' AND c.status = 'booked'"""):
+               WHERE c.category = 'uncategorized' AND c.direction = 'debit' AND c.status = 'booked'
+                 AND c.kind = 'spending'"""):
         key = group_key(name, desc)
         if not key:
             continue
@@ -259,7 +266,7 @@ def inbox(conn: sqlite3.Connection, limit: int = 40) -> dict:
     share = conn.execute(
         f"""SELECT round(100.0 * sum(CASE WHEN category = 'uncategorized' THEN -amount_ron ELSE 0 END)
                    / nullif(sum(-amount_ron), 0), 1)
-            FROM transactions_clean c WHERE {BASE} AND amount_ron < 0""").fetchone()[0]
+            FROM transactions_clean c WHERE {BASE} AND amount_ron < 0 AND c.kind = 'spending'""").fetchone()[0]
     return {"items": items[:limit], "remaining": len(items), "uncategorized_share_pct": share or 0.0}
 
 

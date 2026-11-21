@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Kids' accounts: mark an account as a child's on Accounts. Its own payments stay visible in Activity
+  but out of your totals; what you send it counts as Kids · allowance; what comes back is other money in;
+  its balance is shown apart from yours. Transfers are found by shared reference, IBAN, matching amounts
+  (child accounts often have no IBAN) and the names learned from those.
 - Products under one company name are told apart: built-in rules for Google Cloud, Google Play,
   Google One and YouTube Premium (before the general "Google"), and Google's 0.00 card checks as fees.
 - "All payments to this payee" keeps the product in its match text (`Google*cloud Ab12` → `google*cloud`),

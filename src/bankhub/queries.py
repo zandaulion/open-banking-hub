@@ -42,7 +42,7 @@ def sync_status(conn: sqlite3.Connection) -> dict:
 
 def balances(conn: sqlite3.Connection) -> dict:
     rows = _rows(conn.execute(
-        """SELECT a.alias AS account, a.institution, b.currency, b.amount_minor / 100.0 AS amount,
+        """SELECT a.alias AS account, a.institution, a.role, b.currency, b.amount_minor / 100.0 AS amount,
                   b.balance_type, b.fetched_at
            FROM accounts a JOIN balance_snapshots b ON b.account_id = a.id
            WHERE a.active = 1 AND b.id = (SELECT id FROM balance_snapshots WHERE account_id=a.id
@@ -51,12 +51,17 @@ def balances(conn: sqlite3.Connection) -> dict:
     rates = RateTable(conn)
     today = date.today().isoformat()
     total_ron = 0.0
+    dependent_ron = 0.0
     for r in rows:
         ron = rates.to_ron(r["amount"], r["currency"], today)
         r["amount_ron"] = round(ron, 2) if ron is not None else None
-        total_ron += ron or 0
+        # A child's account is shown, but is not part of my total.
+        if r["role"] == "dependent":
+            dependent_ron += ron or 0
+        else:
+            total_ron += ron or 0
     eur = rates.to_ron(1, "EUR", today)
-    return {"accounts": rows, "total_ron": round(total_ron, 2),
+    return {"accounts": rows, "total_ron": round(total_ron, 2), "dependent_total_ron": round(dependent_ron, 2),
             "total_eur": round(total_ron / eur, 2) if eur else None, "fx_basis": "BNR official rate"}
 
 

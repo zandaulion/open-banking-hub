@@ -153,3 +153,37 @@ def test_card_top_up_is_an_own_transfer(conn, rules):
     ledger.rebuild(conn, rules, today=date(2026, 11, 5))
     row = next(iter(_kinds(conn).values()))
     assert (row["is_internal_transfer"], row["kind"]) == (1, "internal")
+
+
+def test_childs_account_allowance_and_exclusion(conn, rules):
+    sync.register_session(conn, session("Revolut", [("me", "RON", "CACC"), ("kid", "RON", "CACC")]))
+    conn.execute("UPDATE accounts SET role='dependent', own_ibans='[]' WHERE uid='kid'")
+    kid_id = {"other": {"identification": "kid-revolut-id"}}
+    store(conn, "me", [
+        tx("50", "2026-10-03", name="KID EXAMPLE", other=kid_id["other"], text="To KID EXAMPLE"),   # matched by amount
+        tx("20", "2026-10-20", name="KID EXAMPLE", other=kid_id["other"], text="To KID EXAMPLE"),   # learned name
+        tx("40", "2026-10-25", debit=False, name="KID EXAMPLE", other=kid_id["other"], text="half of the bike"),
+        tx("100", "2026-10-05", name="Lidl"),
+    ])
+    store(conn, "kid", [
+        tx("50", "2026-10-03", debit=False, name="ME EXAMPLE", text="From ME EXAMPLE"),
+        tx("30", "2026-10-04", name="Lidl"),
+        tx("40", "2026-10-25", name="ME EXAMPLE", other={"identification": "me-id"}, text="half of the bike"),
+    ])
+    ledger.rebuild(conn, rules, today=date(2026, 11, 5))
+    rows = {(r["account_alias"], r["booking_date"], r["amount"]): dict(r) for r in conn.execute("SELECT * FROM transactions_clean")}
+    me = lambda d, a: rows[("revolut_ron", d, a)]
+    assert (me("2026-10-03", -50.0)["category"], me("2026-10-03", -50.0)["subcategory"]) == ("kids", "allowance")
+    assert me("2026-10-20", -20.0)["category"] == "kids"                     # no matching credit: known by name
+    assert (me("2026-10-25", 40.0)["kind"], me("2026-10-25", 40.0)["subcategory"]) == ("other_in", "from_kids")
+    assert all(r["kind"] == "dependent" and r["is_internal_transfer"] == 0
+               for k, r in rows.items() if k[0] == "revolut_ron_2")
+    s = queries.spending_summary(conn, date_from="2026-10-01", date_to="2026-10-31")
+    assert s["total_outflow_ron"] == 170.0          # 100 Lidl + 50 + 20 allowance; the kid's own Lidl is not counted
+    assert s["other_money_in_ron"] == 40.0
+    assert "KID" not in str(s) and "EXAMPLE" not in str(s)
+    acc = {a["account"]: a for a in []}
+    conn.executemany("INSERT INTO balance_snapshots(account_id, fetched_at, balance_type, amount_minor, currency)"
+                     " SELECT id, '2026-11-01', 'ITAV', ?, 'RON' FROM accounts WHERE uid=?", [(100000, "me"), (5000, "kid")])
+    b = queries.balances(conn)
+    assert (b["total_ron"], b["dependent_total_ron"]) == (1000.0, 50.0)

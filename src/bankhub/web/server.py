@@ -136,6 +136,10 @@ class AccountName(BaseModel):
     name: str | None = None
 
 
+class AccountRole(BaseModel):
+    role: str
+
+
 class OneOff(BaseModel):
     value: bool | None     # True: always one-off, False: never, None: automatic (by size)
 
@@ -303,6 +307,16 @@ def create_app(cfg: WebConfig) -> FastAPI:
             if not data.rename_account(conn, alias, body.name):
                 raise HTTPException(404)
         return {"ok": True}
+
+    @app.post("/api/accounts/{alias}/role")
+    def set_role(alias: str, body: AccountRole, dev: dict = Depends(device)):
+        try:
+            with write_lock, closing(connect(cfg.core.db_path)) as conn:
+                if not data.set_account_role(conn, alias, body.role):
+                    raise HTTPException(404)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"rebuilt": rebuild()}
 
     @app.get("/api/inbox")
     def inbox(dev: dict = Depends(device)):

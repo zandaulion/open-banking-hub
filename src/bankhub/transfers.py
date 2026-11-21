@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from .fx import RateTable
@@ -16,6 +16,9 @@ AMOUNT_TOLERANCE = 0.02   # Revolut converts at its own rate and may charge a fe
 class TransferResult:
     internal_ids: set[int]
     pairs: list[tuple[int, int, str, float]]   # debit_id, credit_id, method, confidence
+    to_dependent: set[int] = field(default_factory=set)     # my money sent to a child's account
+    from_dependent: set[int] = field(default_factory=set)   # money from a child's account to mine
+    dependent_accounts: set[int] = field(default_factory=set)
 
 
 def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> TransferResult:
@@ -25,9 +28,14 @@ def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> Transfer
                   t.counterparty_name
            FROM transactions_raw t JOIN accounts a ON a.id = t.account_id
            WHERE t.status = 'BOOK'""").fetchall()
-    own_ibans = set()
-    for (ibans,) in conn.execute("SELECT own_ibans FROM accounts"):
-        own_ibans.update(json.loads(ibans or "[]"))
+    own_ibans, dep_ibans = set(), set()
+    dependent = set()
+    for acc_id, ibans, role in conn.execute("SELECT id, own_ibans, role FROM accounts"):
+        if role == "dependent":
+            dependent.add(acc_id)
+            dep_ibans.update(json.loads(ibans or "[]"))
+        else:
+            own_ibans.update(json.loads(ibans or "[]"))
     rejected = {(r[0], r[1]) for r in conn.execute("SELECT debit_id, credit_id FROM transfer_pairs WHERE confirmed=-1")}
 
     internal: set[int] = set()
@@ -85,13 +93,70 @@ def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> Transfer
             pairs.append((d["id"], c["id"], "amount_match", 0.7))
             internal.update((d["id"], c["id"]))
 
+    to_dep, from_dep = _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected)
+
     # Manual decisions win.
     for debit_id, credit_id in conn.execute("SELECT debit_id, credit_id FROM transfer_pairs WHERE confirmed=1 AND method='manual'"):
         internal.update((debit_id, credit_id))
     for raw_id, flag in conn.execute("SELECT raw_id, is_internal_transfer FROM transaction_overrides"
                                      " WHERE is_internal_transfer IS NOT NULL"):
         (internal.add if flag else internal.discard)(raw_id)
-    return TransferResult(internal, pairs)
+    internal -= to_dep | from_dep
+    return TransferResult(internal, pairs, to_dep, from_dep, dependent)
+
+
+def _norm(name: str | None) -> str:
+    return " ".join((name or "").lower().split())
+
+
+def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
+    """Money between my accounts and a child's account. Those are not own transfers: what I send is
+    spending (an allowance), what comes back is money in. Found by shared reference, the child
+    account's IBAN, matching amounts, and then by the names seen in those."""
+    to_dep: set[int] = set()
+    from_dep: set[int] = set()
+    if not dependent:
+        return to_dep, from_dep
+    by_id = {r["id"]: r for r in rows}
+
+    def mark(own_row):
+        (to_dep if own_row["amount_minor"] < 0 else from_dep).add(own_row["id"])
+
+    for d_id, c_id, method, _ in list(pairs):
+        d, c = by_id.get(d_id), by_id.get(c_id)
+        if not d or not c:
+            continue
+        d_dep, c_dep = d["account_id"] in dependent, c["account_id"] in dependent
+        if d_dep != c_dep:
+            mark(c if d_dep else d)
+    for r in rows:
+        if r["account_id"] not in dependent and r["counterparty_iban"] and \
+                r["counterparty_iban"].replace(" ", "") in dep_ibans:
+            mark(r)
+    # Same amount, same currency, opposite directions, within two days (child accounts often have no IBAN).
+    dep_rows = [r for r in rows if r["account_id"] in dependent]
+    own_rows = [r for r in rows if r["account_id"] not in dependent and r["id"] not in to_dep | from_dep
+                and (r["id"] not in internal or r["counterparty_has_account"])]
+    used: set[int] = set()
+    for o in sorted(own_rows, key=lambda r: r["booking_date"]):
+        o_day = date.fromisoformat(o["booking_date"])
+        for k in dep_rows:
+            if k["id"] in used or k["amount_minor"] != -o["amount_minor"] or k["currency"] != o["currency"]:
+                continue
+            pair = (o["id"], k["id"]) if o["amount_minor"] < 0 else (k["id"], o["id"])
+            if pair in rejected or abs((date.fromisoformat(k["booking_date"]) - o_day).days) > 2:
+                continue
+            used.add(k["id"])
+            pairs.append((*pair, "dependent", 0.8))
+            mark(o)
+            break
+    # Names learned from the transfers found so far (e.g. "To KID EXAMPLE") cover the rest.
+    names = {_norm(by_id[i]["counterparty_name"]) for i in to_dep | from_dep if by_id[i]["counterparty_name"]}
+    for r in rows:
+        if r["account_id"] not in dependent and r["id"] not in to_dep | from_dep and \
+                r["counterparty_has_account"] and _norm(r["counterparty_name"]) in names:
+            mark(r)
+    return to_dep, from_dep
 
 
 def store_pairs(conn: sqlite3.Connection, pairs: list[tuple[int, int, str, float]]) -> None:

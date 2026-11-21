@@ -141,8 +141,13 @@ def rebuild(conn: sqlite3.Connection, rules: Rules, today: date | None = None,
     out_by_key: dict[str, list[recurring.Charge]] = {}
     in_by_key: dict[str, list[recurring.Charge]] = {}
     for r in rows:
-        internal = r["id"] in found.internal_ids
+        on_dependent = r["account_id"] in found.dependent_accounts
+        internal = r["id"] in found.internal_ids and not on_dependent
         c = classify(r, rules, internal)
+        if r["id"] in found.to_dependent:
+            c = Classification("dependent_account", "dependent", "kids", "allowance", "spending")
+        elif r["id"] in found.from_dependent:
+            c = Classification("dependent_account", "dependent", "money_in", "from_kids", "other_in")
         o = overrides.get(r["id"])
         if o:
             if o["merchant"]:
@@ -153,9 +158,10 @@ def rebuild(conn: sqlite3.Connection, rules: Rules, today: date | None = None,
         amount_ron = rates.to_ron(amount, r["currency"], r["booking_date"])
         # One-off: very large, or marked by hand. It keeps its category but stays out of regular totals.
         flag = o["one_off"] if o is not None else None
-        one_off = (not internal) and (bool(flag) if flag is not None
-                                      else amount_ron is not None and abs(amount_ron) >= one_off_ron)
-        kind = "one_off" if one_off else c.kind
+        one_off = (not internal) and not on_dependent and (
+            bool(flag) if flag is not None else amount_ron is not None and abs(amount_ron) >= one_off_ron)
+        # A child's own payments stay visible but out of my totals.
+        kind = "dependent" if on_dependent else ("one_off" if one_off else c.kind)
         row = {"id": r["id"], "account_alias": r["alias"], "booking_date": r["booking_date"],
                "value_date": r["value_date"], "amount": amount, "currency": r["currency"],
                "amount_ron": round(amount_ron, 2) if amount_ron is not None else None,

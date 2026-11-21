@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-21)
 
 - The demo (`bankhub demo`) now includes a child's account in a group and a credit card added from three
   statements, and the screenshots are new.

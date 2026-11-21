@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 from .. import fx, ledger, sync
 from ..config import Config, _read_env_file, load_config
-from ..db import connect, connect_readonly
+from ..db import connect, connect_readonly, transaction
 from ..enablebanking import EnableBanking
 from ..rules import load_rules
 from . import data, rules_edit
@@ -136,8 +136,14 @@ class AccountName(BaseModel):
     name: str | None = None
 
 
-class AccountRole(BaseModel):
-    role: str
+class Group(BaseModel):
+    name: str
+    behaviour: str
+    category: str = "family"
+    subcategory: str | None = None
+    money_back: str = "money_in"
+    sent_as: str = "spending"
+    accounts: list[str] | None = None
 
 
 class OneOff(BaseModel):
@@ -308,14 +314,33 @@ def create_app(cfg: WebConfig) -> FastAPI:
                 raise HTTPException(404)
         return {"ok": True}
 
-    @app.post("/api/accounts/{alias}/role")
-    def set_role(alias: str, body: AccountRole, dev: dict = Depends(device)):
+    def save_group(group_id: int | None, body: Group):
+        _check_category(body.category, body.subcategory)
+        payload = body.model_dump(exclude_none=True)
         try:
-            with write_lock, closing(connect(cfg.core.db_path)) as conn:
-                if not data.set_account_role(conn, alias, body.role):
-                    raise HTTPException(404)
+            with write_lock, closing(connect(cfg.core.db_path)) as conn, transaction(conn):
+                gid = data.save_group(conn, group_id, payload)
         except ValueError as e:
             raise HTTPException(400, str(e))
+        except LookupError:
+            raise HTTPException(404)
+        return {"id": gid, "rebuilt": rebuild()}
+
+    @app.post("/api/groups")
+    def create_group(body: Group, dev: dict = Depends(device)):
+        return save_group(None, body)
+
+    @app.post("/api/groups/{group_id}")
+    def update_group(group_id: int, body: Group, dev: dict = Depends(device)):
+        return save_group(group_id, body)
+
+    @app.delete("/api/groups/{group_id}")
+    def remove_group(group_id: int, dev: dict = Depends(device)):
+        with write_lock, closing(connect(cfg.core.db_path)) as conn:
+            with transaction(conn):
+                found = data.delete_group(conn, group_id)
+            if not found:
+                raise HTTPException(404)
         return {"rebuilt": rebuild()}
 
     @app.get("/api/inbox")

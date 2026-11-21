@@ -16,9 +16,9 @@ AMOUNT_TOLERANCE = 0.02   # Revolut converts at its own rate and may charge a fe
 class TransferResult:
     internal_ids: set[int]
     pairs: list[tuple[int, int, str, float]]   # debit_id, credit_id, method, confidence
-    to_dependent: set[int] = field(default_factory=set)     # my money sent to a child's account
-    from_dependent: set[int] = field(default_factory=set)   # money from a child's account to mine
-    dependent_accounts: set[int] = field(default_factory=set)
+    to_dependent: dict[int, int] = field(default_factory=dict)     # my payment -> group it went to
+    from_dependent: dict[int, int] = field(default_factory=dict)   # my receipt -> group it came from
+    dependent_accounts: dict[int, int] = field(default_factory=dict)   # account -> its group
 
 
 def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> TransferResult:
@@ -28,12 +28,13 @@ def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> Transfer
                   t.counterparty_name
            FROM transactions_raw t JOIN accounts a ON a.id = t.account_id
            WHERE t.status = 'BOOK'""").fetchall()
-    own_ibans, dep_ibans = set(), set()
-    dependent = set()
-    for acc_id, ibans, role in conn.execute("SELECT id, own_ibans, role FROM accounts"):
-        if role == "dependent":
-            dependent.add(acc_id)
-            dep_ibans.update(json.loads(ibans or "[]"))
+    own_ibans: set[str] = set()
+    dep_ibans: dict[str, int] = {}
+    dependent: dict[int, int] = {}
+    for acc_id, ibans, group in conn.execute("SELECT id, own_ibans, group_id FROM accounts"):
+        if group is not None:
+            dependent[acc_id] = group
+            dep_ibans.update({i: group for i in json.loads(ibans or "[]")})
         else:
             own_ibans.update(json.loads(ibans or "[]"))
     rejected = {(r[0], r[1]) for r in conn.execute("SELECT debit_id, credit_id FROM transfer_pairs WHERE confirmed=-1")}
@@ -101,7 +102,7 @@ def detect(conn: sqlite3.Connection, rules: Rules, rates: RateTable) -> Transfer
     for raw_id, flag in conn.execute("SELECT raw_id, is_internal_transfer FROM transaction_overrides"
                                      " WHERE is_internal_transfer IS NOT NULL"):
         (internal.add if flag else internal.discard)(raw_id)
-    internal -= to_dep | from_dep
+    internal -= set(to_dep) | set(from_dep)
     return TransferResult(internal, pairs, to_dep, from_dep, dependent)
 
 
@@ -110,17 +111,20 @@ def _norm(name: str | None) -> str:
 
 
 def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
-    """Money between my accounts and a child's account. Those are not own transfers: what I send is
-    spending (an allowance), what comes back is money in. Found by shared reference, the child
-    account's IBAN, matching amounts, and then by the names seen in those."""
-    to_dep: set[int] = set()
-    from_dep: set[int] = set()
+    """Money between my accounts and a group's accounts (a child, a business...). Not own transfers:
+    how they count depends on the group. Found by shared reference, the group account's IBAN, matching
+    amounts, and then by the names seen in those. Returns {my transaction: group} for each direction."""
+    to_dep: dict[int, int] = {}
+    from_dep: dict[int, int] = {}
     if not dependent:
         return to_dep, from_dep
     by_id = {r["id"]: r for r in rows}
 
-    def mark(own_row):
-        (to_dep if own_row["amount_minor"] < 0 else from_dep).add(own_row["id"])
+    def mark(own_row, group):
+        (to_dep if own_row["amount_minor"] < 0 else from_dep)[own_row["id"]] = group
+
+    def found():
+        return set(to_dep) | set(from_dep)
 
     for d_id, c_id, method, _ in list(pairs):
         d, c = by_id.get(d_id), by_id.get(c_id)
@@ -128,14 +132,16 @@ def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
             continue
         d_dep, c_dep = d["account_id"] in dependent, c["account_id"] in dependent
         if d_dep != c_dep:
-            mark(c if d_dep else d)
+            mark(c if d_dep else d, dependent[d["account_id"] if d_dep else c["account_id"]])
     for r in rows:
-        if r["account_id"] not in dependent and r["counterparty_iban"] and \
-                r["counterparty_iban"].replace(" ", "") in dep_ibans:
-            mark(r)
+        iban = (r["counterparty_iban"] or "").replace(" ", "")
+        if r["account_id"] not in dependent and iban in dep_ibans:
+            mark(r, dep_ibans[iban])
     # Same amount, same currency, opposite directions, within two days (child accounts often have no IBAN).
-    dep_rows = [r for r in rows if r["account_id"] in dependent]
-    own_rows = [r for r in rows if r["account_id"] not in dependent and r["id"] not in to_dep | from_dep
+    # A group's rows already paired (a move between its own pockets) are not candidates.
+    paired = {i for d_id, c_id, _, _ in pairs for i in (d_id, c_id)}
+    dep_rows = [r for r in rows if r["account_id"] in dependent and r["id"] not in paired]
+    own_rows = [r for r in rows if r["account_id"] not in dependent and r["id"] not in found()
                 and (r["id"] not in internal or r["counterparty_has_account"])]
     used: set[int] = set()
     for o in sorted(own_rows, key=lambda r: r["booking_date"]):
@@ -148,14 +154,17 @@ def _dependent_transfers(rows, pairs, internal, dependent, dep_ibans, rejected):
                 continue
             used.add(k["id"])
             pairs.append((*pair, "dependent", 0.8))
-            mark(o)
+            mark(o, dependent[k["account_id"]])
             break
     # Names learned from the transfers found so far (e.g. "To KID EXAMPLE") cover the rest.
-    names = {_norm(by_id[i]["counterparty_name"]) for i in to_dep | from_dep if by_id[i]["counterparty_name"]}
+    names: dict[str, int] = {}
+    for i in found():
+        if by_id[i]["counterparty_name"]:
+            names[_norm(by_id[i]["counterparty_name"])] = (to_dep.get(i) or from_dep.get(i))
     for r in rows:
-        if r["account_id"] not in dependent and r["id"] not in to_dep | from_dep and \
-                r["counterparty_has_account"] and _norm(r["counterparty_name"]) in names:
-            mark(r)
+        if r["account_id"] not in dependent and r["id"] not in found() and r["counterparty_has_account"] \
+                and _norm(r["counterparty_name"]) in names:
+            mark(r, names[_norm(r["counterparty_name"])])
     return to_dep, from_dep
 
 

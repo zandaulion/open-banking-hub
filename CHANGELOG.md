@@ -2,10 +2,16 @@
 
 ## Unreleased
 
-- Kids' accounts: mark an account as a child's on Accounts. Its own payments stay visible in Activity
-  but out of your totals; what you send it counts as Kids · allowance; what comes back is other money in;
-  its balance is shown apart from yours. Transfers are found by shared reference, IBAN, matching amounts
-  (child accounts often have no IBAN) and the names learned from those.
+- Account groups, for money that isn't yours: a child's or a parent's accounts, a business, an account
+  you manage for someone. Create one on Accounts, put accounts in it, and choose how it counts:
+  - **Someone I support:** what you send counts in the group's own category (e.g. Kids · allowance,
+    Family · parents); what comes back is other money in, or reduces that category;
+  - **Kept separate:** money between you is a transfer (not counted), or spending if you prefer.
+
+  The group's own payments stay visible in Activity but out of your totals, and its balance is shown
+  apart. Month lists what went to each group. Transfers are found by shared reference, IBAN, matching
+  amounts (a child's account often has no IBAN) and the names learned from those. Group names stay in
+  the app; AI assistants see only the category.
 - Products under one company name are told apart: built-in rules for Google Cloud, Google Play,
   Google One and YouTube Premium (before the general "Google"), and Google's 0.00 card checks as fees.
 - "All payments to this payee" keeps the product in its match text (`Google*cloud Ab12` → `google*cloud`),

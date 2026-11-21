@@ -261,3 +261,22 @@ def test_a_narrower_match_makes_its_own_rule_ahead_of_a_broad_one(cfg, conn, rul
     assert cats["Google*cloud Ab12cd"] == "dev" and cats["Google Play Apps"] == "subscriptions"
     names = [r["name"] for r in app.get("/api/rules").json()["rules"]]
     assert "Google Cloud" in names and "Google" in names              # the broad rule is untouched
+
+
+def test_groups_create_edit_and_remove(cfg):
+    app = _device(cfg)
+    body = {"name": "Alex", "behaviour": "supported", "category": "kids", "subcategory": "allowance",
+            "accounts": ["revolut_ron"]}
+    r = app.post("/api/groups", json=body, headers=H)
+    assert r.status_code == 200
+    gid = r.json()["id"]
+    d = app.get("/api/accounts").json()
+    assert d["groups"][0]["name"] == "Alex" and d["groups"][0]["accounts"] == ["revolut_ron"]
+    assert {t["kind"] for t in app.get("/api/transactions").json()["transactions"]} == {"dependent"}
+    assert app.post("/api/groups", json=body, headers=H).status_code == 400            # same name
+    assert app.post("/api/groups", json={**body, "name": "B", "behaviour": "shared"}, headers=H).status_code == 400
+    assert app.post(f"/api/groups/{gid}", json={**body, "category": "Not Valid"}, headers=H).status_code == 400
+    assert app.delete(f"/api/groups/{gid}").status_code == 403                          # needs the custom header
+    assert app.delete(f"/api/groups/{gid}", headers=H).status_code == 200
+    assert app.get("/api/accounts").json()["groups"] == []
+    assert "dependent" not in {t["kind"] for t in app.get("/api/transactions").json()["transactions"]}

@@ -598,7 +598,14 @@ async function renderMonth(params) {
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, p.payee), h('span', { class: 'amt num' }, ron(p.outflow_ron))),
         h('div', { class: 'row-sub' }, h('span', {}, pretty(p.category)), h('span', {}, `${p.n}×`)))))));
 
-  view.replaceChildren(hero, oneOffs, trend, cats, payees,
+  const people = d.groups && d.groups.length ? h('section', { class: 'card' }, h('h2', {}, 'Groups'),
+    h('ul', { class: 'rows' }, d.groups.map((g) => h('li', {},
+      h('div', { class: 'row-head' }, h('span', { class: 'name' }, g.name), h('span', { class: 'amt num' }, ron(g.sent_ron))),
+      h('div', { class: 'row-sub' }, h('span', {}, g.behaviour === 'separate' && g.category === 'transfers' ? 'not counted'
+          : [pretty(g.category), g.subcategory && pretty(g.subcategory)].filter(Boolean).join(' · ')),
+        h('span', {}, g.back_ron ? `${ron(g.back_ron)} back` : `${g.n}×`)))))) : '';
+
+  view.replaceChildren(hero, oneOffs, trend, cats, people, payees,
     h('p', { class: 'faint center-text' }, `Booked transactions only · newest ${d.newest_transaction || '—'}`));
 }
 
@@ -682,7 +689,7 @@ async function renderTransactions(params) {
       if (t.is_internal_transfer) tags.push('own transfer');
       if (t.is_recurring) tags.push('recurring');
       if (t.is_one_off) tags.push('one-off');
-      if (t.kind === 'dependent') tags.push("child's account · not counted");
+      if (t.kind === 'dependent') tags.push('in a group · not counted');
       if (t.kind === 'refund') tags.push('refund');
       if (t.status === 'pending') tags.push('pending');
       if (t.overridden) tags.push('changed by you');
@@ -1055,28 +1062,105 @@ function healthCard(hd) {
 }
 
 // ---------------------------------------------------------------- accounts
-function openRenameSheet(a) {
+function openRenameSheet(a, groups) {
   const input = h('input', { value: a.name === a.alias ? '' : a.name, placeholder: a.alias, maxlength: '40', autocomplete: 'off' });
   const msg = h('p', { class: 'muted', role: 'status' });
   const save = h('button', { class: 'btn primary' }, 'Save');
+  const group = h('select', {}, h('option', { value: '' }, 'Mine: counted in my totals'),
+    groups.map((g) => h('option', { value: String(g.id), selected: g.id === a.group_id }, `In ${g.name}: not in my totals`)),
+    h('option', { value: 'new' }, 'In a new group…'));
   let sheet;
   save.addEventListener('click', async () => {
     save.disabled = true;
     try {
       await api(`accounts/${encodeURIComponent(a.alias)}/name`, { method: 'POST', body: { name: input.value } });
-      if (role.value !== (a.role || 'own')) await api(`accounts/${encodeURIComponent(a.alias)}/role`, { method: 'POST', body: { role: role.value } });
+      const was = a.group_id ? String(a.group_id) : '';
+      if (group.value === 'new') { sheet.close(); openGroupSheet(null, [a.alias]); return; }
+      if (group.value !== was) {
+        // Moving the account: take it out of its old group, then add it to the new one.
+        const old = groups.find((g) => String(g.id) === was);
+        if (old) await api(`groups/${old.id}`, { method: 'POST', body: { ...groupBody(old), accounts: old.accounts.filter((x) => x !== a.alias) } });
+        const next = groups.find((g) => String(g.id) === group.value);
+        if (next) await api(`groups/${next.id}`, { method: 'POST', body: { ...groupBody(next), accounts: [...next.accounts, a.alias] } });
+      }
       sheet.close(); refresh();
     }
     catch (e) { msg.textContent = e.message; save.disabled = false; }
   });
-  const role = h('select', {}, h('option', { value: 'own', selected: a.role !== 'dependent' }, 'Mine: counted in my totals'),
-    h('option', { value: 'dependent', selected: a.role === 'dependent' }, "A child's account: not in my totals"));
   sheet = sheetOpen(h('h2', {}, a.name),
     h('p', { class: 'muted', style: 'margin:4px 0 0' }, `${a.institution} · ${a.currency}${a.history_from ? ` · history from ${dayLabel(a.history_from)}` : ''}`),
     h('label', { class: 'field' }, 'Name (leave empty for the default)', input),
-    h('label', { class: 'field' }, 'This account is', role,
-      h('span', { class: 'faint', style: 'font-size:12px' }, "For a child's account, what you send it counts as an allowance and what comes back as money in.")), msg,
+    h('label', { class: 'field' }, 'This account is', group,
+      h('span', { class: 'faint', style: 'font-size:12px' }, "Put someone else's accounts in a group (a child, a parent, a business), so their payments are not counted as yours.")), msg,
     h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => sheet.close() }, 'Cancel'), save));
+}
+
+function groupBody(g) {
+  return { name: g.name, behaviour: g.behaviour, category: g.category, subcategory: g.subcategory, money_back: g.money_back, sent_as: g.sent_as };
+}
+
+const BEHAVIOUR = { supported: 'Someone I support', separate: 'Kept separate' };
+
+function groupSummary(g) {
+  const cat = [pretty(g.category), g.subcategory && pretty(g.subcategory)].filter(Boolean).join(' · ');
+  if (g.behaviour === 'separate') return g.sent_as === 'transfer' ? 'Money between you is a transfer: not counted.' : `What you send counts as ${cat}; what comes back is money in.`;
+  return `What you send counts as ${cat}; what comes back ${g.money_back === 'reduce' ? `reduces ${cat}` : 'is money in'}.`;
+}
+
+async function openGroupSheet(g, accounts) {
+  const d = await api('accounts');
+  if (!state.categories) state.categories = (await api('rules')).categories;
+  const all = d.balances.accounts;
+  const members = new Set(g ? g.accounts : accounts || []);
+  const name = h('input', { value: g ? g.name : '', placeholder: 'e.g. Alex, Mum, My company', maxlength: '40', autocomplete: 'off' });
+  const behaviour = h('select', {}, Object.entries(BEHAVIOUR).map(([v, label]) => h('option', { value: v, selected: (g ? g.behaviour : 'supported') === v }, label)));
+  const current = g ? g.category : 'family';
+  const picker = categoryPicker([...new Set([...state.categories, current])].sort(), current, g ? g.subcategory : 'support');
+  const back = h('select', {}, h('option', { value: 'money_in', selected: !g || g.money_back === 'money_in' }, 'Other money in'),
+    h('option', { value: 'reduce', selected: g && g.money_back === 'reduce' }, 'Reduces the category above'));
+  const sent = h('select', {}, h('option', { value: 'transfer', selected: !g || g.sent_as === 'transfer' }, 'A transfer: not counted'),
+    h('option', { value: 'spending', selected: g && g.sent_as === 'spending' }, 'Spending, in the category above'));
+  const backField = h('label', { class: 'field' }, 'Money they send back counts as', back);
+  const sentField = h('label', { class: 'field' }, 'Money you send counts as', sent);
+  const catField = h('div', {}, ...picker.fields);
+  const sync = () => {
+    const sep = behaviour.value === 'separate';
+    backField.hidden = sep; sentField.hidden = !sep;
+    catField.hidden = sep && sent.value === 'transfer';
+  };
+  behaviour.addEventListener('change', sync); sent.addEventListener('change', sync); sync();
+  const boxes = all.map((a) => {
+    const box = h('input', { type: 'checkbox', checked: members.has(a.alias) });
+    box.dataset.alias = a.alias;
+    const elsewhere = a.group_id && (!g || a.group_id !== g.id) ? ` · now in ${d.groups.find((x) => x.id === a.group_id)?.name}` : '';
+    return h('label', { class: 'toggle' }, box, ` ${a.name} `, h('span', { class: 'faint' }, `${a.institution} · ${a.currency}${elsewhere}`));
+  });
+  const msg = h('p', { class: 'muted', role: 'status' });
+  const save = h('button', { class: 'btn primary' }, 'Save');
+  let sheet;
+  save.addEventListener('click', async () => {
+    save.disabled = true; msg.textContent = 'Saving and recounting…';
+    const cat = picker.value();
+    const body = { name: name.value, behaviour: behaviour.value, category: cat.category || 'family', subcategory: cat.subcategory,
+      money_back: back.value, sent_as: behaviour.value === 'separate' ? sent.value : 'spending',
+      accounts: boxes.map((l) => l.querySelector('input')).filter((x) => x.checked).map((x) => x.dataset.alias) };
+    try { await api(g ? `groups/${g.id}` : 'groups', { method: 'POST', body }); sheet.close(); refresh(); }
+    catch (e) { msg.textContent = e.message; save.disabled = false; }
+  });
+  const remove = g ? h('button', { class: 'btn', style: 'margin-right:auto' }, 'Remove group') : '';
+  if (g) remove.addEventListener('click', async () => {
+    if (!confirm(`Remove ${g.name}? Its accounts become yours again.`)) return;
+    try { await api(`groups/${g.id}`, { method: 'DELETE' }); sheet.close(); refresh(); }
+    catch (e) { msg.textContent = e.message; }
+  });
+  sheet = sheetOpen(h('h2', {}, g ? g.name : 'New group'),
+    h('p', { class: 'muted', style: 'margin:4px 0 0' }, "The group's own payments are not counted as yours, and its balance is shown apart."),
+    h('label', { class: 'field' }, 'Name', name),
+    h('label', { class: 'field' }, 'This is', behaviour,
+      h('span', { class: 'faint', style: 'font-size:12px' }, 'Someone I support: a child or a parent, whose money comes from you. Kept separate: a business, or money you manage for someone.')),
+    catField, backField, sentField,
+    h('p', { class: 'muted', style: 'margin:14px 0 0;font-size:13px' }, 'Accounts in this group'), ...boxes, msg,
+    h('div', { class: 'actions' }, remove, h('button', { class: 'btn', onclick: () => sheet.close() }, 'Cancel'), save));
 }
 
 async function renderAccounts(params) {
@@ -1097,20 +1181,24 @@ async function renderAccounts(params) {
     h('p', { class: 'eyebrow' }, 'All accounts'),
     h('div', { class: 'hero num' }, nf0.format(b.total_ron), h('small', {}, 'RON')),
     b.total_eur ? h('div', { class: 'delta' }, `≈ ${nf0.format(b.total_eur)} EUR at the BNR rate`) : '',
-    h('ul', { class: 'rows', style: 'margin-top:12px' }, b.accounts.filter((a) => a.role !== 'dependent').map((a) => h('li', {},
-      h('button', { class: 'rowbtn', onclick: () => openRenameSheet(a) },
+    h('ul', { class: 'rows', style: 'margin-top:12px' }, b.accounts.filter((a) => !a.group_id).map((a) => h('li', {},
+      h('button', { class: 'rowbtn', onclick: () => openRenameSheet(a, d.groups) },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, a.name), h('span', { class: 'amt num' }, money(a.amount, a.currency))),
         h('div', { class: 'row-sub' }, h('span', {}, `${a.institution}${a.name !== a.alias ? ` · ${a.alias}` : ''}`),
           h('span', {}, a.currency !== 'RON' ? ron(a.amount_ron) : '')))))),
-    h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, 'Tap an account to rename it, or to mark it as a child\'s account. Names stay in this app; AI assistants see the neutral label.'));
-  const kidsList = b.accounts.filter((a) => a.role === 'dependent');
-  const kids = kidsList.length ? h('section', { class: 'card' },
-    h('h2', {}, "Kids' accounts"),
-    h('p', { class: 'faint', style: 'margin:-4px 0 8px;font-size:13px' }, `${ron(b.dependent_total_ron)} in total, not part of yours. What you send them counts as Kids · allowance; their own payments are not in your totals.`),
-    h('ul', { class: 'rows' }, kidsList.map((a) => h('li', {},
-      h('button', { class: 'rowbtn', onclick: () => openRenameSheet(a) },
-        h('div', { class: 'row-head' }, h('span', { class: 'name' }, a.name), h('span', { class: 'amt num' }, money(a.amount, a.currency))),
-        h('div', { class: 'row-sub' }, h('span', {}, `${a.institution} · ${a.alias}`))))))) : '';
+    h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, "Tap an account to rename it, or to put it in a group (someone else's money). Names stay in this app; AI assistants see the neutral label."));
+  const groupCards = d.groups.map((g) => {
+    const list = b.accounts.filter((a) => a.group_id === g.id);
+    const total = list.reduce((sum, a) => sum + (a.amount_ron || 0), 0);
+    return h('section', { class: 'card' },
+      h('div', { class: 'row-head' }, h('h2', {}, g.name), h('button', { class: 'btn', onclick: () => openGroupSheet(g) }, 'Edit')),
+      h('p', { class: 'faint', style: 'margin:-4px 0 8px;font-size:13px' }, `${BEHAVIOUR[g.behaviour]} · ${ron(total)}, not part of yours. ${groupSummary(g)}`),
+      list.length ? h('ul', { class: 'rows' }, list.map((a) => h('li', {},
+        h('button', { class: 'rowbtn', onclick: () => openRenameSheet(a, d.groups) },
+          h('div', { class: 'row-head' }, h('span', { class: 'name' }, a.name), h('span', { class: 'amt num' }, money(a.amount, a.currency))),
+          h('div', { class: 'row-sub' }, h('span', {}, `${a.institution} · ${a.alias}`)))))) : h('p', { class: 'muted' }, 'No accounts yet.'));
+  });
+  const newGroup = h('p', { class: 'center-text' }, h('button', { class: 'btn', onclick: () => openGroupSheet(null) }, 'New group'));
 
   const syncBtn = h('button', { class: 'btn', disabled: !!state.offline }, state.offline ? 'Sync needs the server' : 'Sync now');
   const syncMsg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
@@ -1151,7 +1239,7 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
-  view.replaceChildren(total, kids, banks, healthCard(d.health), alertsCard(), link);
+  view.replaceChildren(total, ...groupCards, newGroup, banks, healthCard(d.health), alertsCard(), link);
 }
 
 offlinePrune();

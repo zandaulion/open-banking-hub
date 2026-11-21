@@ -5,6 +5,7 @@ owner their own data, including payee names and descriptions. It is only ever
 served to the owner's registered devices, over a private network.
 """
 
+import json
 import re
 import sqlite3
 from datetime import date, timedelta
@@ -110,7 +111,7 @@ def overview(conn: sqlite3.Connection, month: str) -> dict:
     has_regular_income = conn.execute(
         "SELECT 1 FROM recurring_series WHERE direction = 'in' LIMIT 1").fetchone() is not None
     return {"month": month, **now, "has_regular_income": has_regular_income, "outflow_ron": now["spent_ron"], "previous": {"month": prev, **before},
-            "to_date": to_date, "categories": cats, "payees": payees, "one_offs": one_offs, "trend": trend,
+            "to_date": to_date, "categories": cats, "groups": group_month(conn, start, end), "payees": payees, "one_offs": one_offs, "trend": trend,
             "internal_excluded": {"n": excluded[0], "volume_ron": excluded[1] or 0.0},
             "newest_transaction": newest}
 
@@ -194,19 +195,72 @@ def recurring(conn: sqlite3.Connection) -> dict:
 def accounts(conn: sqlite3.Connection) -> dict:
     balances = queries.balances(conn)
     names = dict(conn.execute("SELECT alias, display_name FROM accounts"))
+    group_of = dict(conn.execute("SELECT alias, group_id FROM accounts"))
     history = {r[0]: r[1] for r in conn.execute(
         "SELECT a.alias, min(t.booking_date) FROM accounts a JOIN transactions_raw t ON t.account_id = a.id GROUP BY a.id")}
     for b in balances["accounts"]:
         b["alias"] = b["account"]
         b["name"] = names.get(b["account"]) or b["account"]
         b["history_from"] = history.get(b["account"])
-    return {"balances": balances, "status": queries.sync_status(conn)}
+        b["group_id"] = group_of.get(b["account"])
+    gs = groups(conn)
+    for g in gs:
+        g["accounts"] = json.loads(g["accounts"])
+    return {"balances": balances, "status": queries.sync_status(conn), "groups": gs}
 
 
-def set_account_role(conn: sqlite3.Connection, alias: str, role: str) -> bool:
-    if role not in ("own", "dependent"):
-        raise ValueError("role must be 'own' or 'dependent'")
-    return conn.execute("UPDATE accounts SET role=? WHERE alias=?", (role, alias)).rowcount > 0
+BEHAVIOURS = ("supported", "separate")
+
+
+def groups(conn: sqlite3.Connection) -> list[dict]:
+    return _rows(conn.execute(
+        """SELECT g.*, (SELECT json_group_array(alias) FROM accounts WHERE group_id = g.id) AS accounts
+           FROM account_groups g ORDER BY g.name"""))
+
+
+def save_group(conn: sqlite3.Connection, group_id: int | None, body: dict) -> int:
+    """Creates or updates a group. body: name, behaviour, category, subcategory, money_back, sent_as, accounts."""
+    name = (body.get("name") or "").strip()[:40]
+    if not name:
+        raise ValueError("A group needs a name.")
+    if body.get("behaviour") not in BEHAVIOURS:
+        raise ValueError("behaviour must be 'supported' or 'separate'")
+    if body.get("money_back", "money_in") not in ("money_in", "reduce") or \
+            body.get("sent_as", "spending") not in ("spending", "transfer"):
+        raise ValueError("unknown option")
+    values = (name, body["behaviour"], body.get("category") or "family", body.get("subcategory"),
+              body.get("money_back", "money_in"), body.get("sent_as", "spending"))
+    try:
+        if group_id is None:
+            group_id = conn.execute("INSERT INTO account_groups(name, behaviour, category, subcategory, money_back, sent_as)"
+                                    " VALUES (?,?,?,?,?,?)", values).lastrowid
+        elif not conn.execute("UPDATE account_groups SET name=?, behaviour=?, category=?, subcategory=?, money_back=?,"
+                              " sent_as=? WHERE id=?", (*values, group_id)).rowcount:
+            raise LookupError(group_id)
+    except sqlite3.IntegrityError:
+        raise ValueError("Another group already has that name.")
+    if "accounts" in body:
+        conn.execute("UPDATE accounts SET group_id = NULL WHERE group_id = ?", (group_id,))
+        conn.executemany("UPDATE accounts SET group_id = ? WHERE alias = ?", [(group_id, a) for a in body["accounts"]])
+    return group_id
+
+
+def delete_group(conn: sqlite3.Connection, group_id: int) -> bool:
+    """Its accounts become mine again."""
+    conn.execute("UPDATE accounts SET group_id = NULL WHERE group_id = ?", (group_id,))
+    return conn.execute("DELETE FROM account_groups WHERE id = ?", (group_id,)).rowcount > 0
+
+
+def group_month(conn: sqlite3.Connection, start: str, end: str) -> list[dict]:
+    """What went to and came back from each group in a month (owner-only: groups have names)."""
+    return _rows(conn.execute(
+        f"""SELECT g.id, g.name, g.behaviour, g.category, g.subcategory,
+                   round(-sum(CASE WHEN c.amount_ron < 0 THEN c.amount_ron ELSE 0 END), 2) AS sent_ron,
+                   round(sum(CASE WHEN c.amount_ron > 0 THEN c.amount_ron ELSE 0 END), 2) AS back_ron,
+                   count(*) AS n
+            FROM transaction_groups tg JOIN account_groups g ON g.id = tg.group_id
+            JOIN transactions_clean c ON c.id = tg.raw_id
+            WHERE {BOOKED} AND c.booking_date BETWEEN ? AND ? GROUP BY g.id ORDER BY sent_ron DESC""", (start, end)))
 
 
 def rename_account(conn: sqlite3.Connection, alias: str, name: str | None) -> bool:

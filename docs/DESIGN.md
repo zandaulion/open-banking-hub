@@ -64,7 +64,7 @@ Every transaction has a **category** (groceries, utilities, loans…) and a **ki
 | `other_in` | other money in (people paying you back, unknown) | other money in |
 | `one_off` | at or above the one-off threshold, or marked by hand | kept out of totals, shown apart |
 | `internal` | a move between your own accounts | nothing |
-| `dependent` | a payment on a child's account | nothing (shown, not counted) |
+| `dependent` | a payment on an account in a group (someone else's money) | nothing (shown, not counted) |
 
 Categories come from the first rule that matches, in this order:
 
@@ -77,12 +77,20 @@ Bank transfers are matched on the counterparty name only, never on the free-text
 can contain anyone's name. Merchants whose names are also first names are `card_only`. Your own
 rules are checked before the packaged ones. Per-transaction overrides win over everything.
 
-## Kids' accounts
+## Account groups
 
-An account marked `dependent` (a child's) is shown but not counted. Money between it and your accounts is
-found by shared reference, its IBAN, the same amount in opposite directions within two days, and the
-counterparty names seen in those matches. What you send is spending (*kids · allowance*), what comes back
-is other money in. Its balance is reported apart from your total.
+Accounts that hold someone else's money (a child's, a parent's, a business) go in a group. A group's own
+payments are shown but not counted, and its balance is reported apart from your total. Money between a
+group's accounts and yours is found by shared reference, IBAN, the same amount in opposite directions
+within two days, and the counterparty names seen in those matches. How it counts depends on the group:
+
+| Behaviour | Money you send | Money back |
+|---|---|---|
+| `supported` (someone I support) | spending, in the group's category | other money in, or a refund in that category |
+| `separate` (kept separate) | a transfer (not counted), or spending | the same: a transfer, or other money in |
+
+Group names stay in the owner's app (`account_groups`, `transaction_groups`); the redacted ledger carries
+only the category.
 
 ## Recurring payments and income
 

@@ -42,7 +42,7 @@ def sync_status(conn: sqlite3.Connection) -> dict:
 
 def balances(conn: sqlite3.Connection) -> dict:
     rows = _rows(conn.execute(
-        """SELECT a.alias AS account, a.institution, a.role, b.currency, b.amount_minor / 100.0 AS amount,
+        """SELECT a.alias AS account, a.institution, CASE WHEN a.group_id IS NULL THEN 'own' ELSE 'dependent' END AS role, b.currency, b.amount_minor / 100.0 AS amount,
                   b.balance_type, b.fetched_at
            FROM accounts a JOIN balance_snapshots b ON b.account_id = a.id
            WHERE a.active = 1 AND b.id = (SELECT id FROM balance_snapshots WHERE account_id=a.id
@@ -55,7 +55,7 @@ def balances(conn: sqlite3.Connection) -> dict:
     for r in rows:
         ron = rates.to_ron(r["amount"], r["currency"], today)
         r["amount_ron"] = round(ron, 2) if ron is not None else None
-        # A child's account is shown, but is not part of my total.
+        # An account in a group (someone else's money) is shown, but is not part of my total.
         if r["role"] == "dependent":
             dependent_ron += ron or 0
         else:

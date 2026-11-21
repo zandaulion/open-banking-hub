@@ -140,14 +140,27 @@ def rebuild(conn: sqlite3.Connection, rules: Rules, today: date | None = None,
     clean: list[dict] = []
     out_by_key: dict[str, list[recurring.Charge]] = {}
     in_by_key: dict[str, list[recurring.Charge]] = {}
+    groups = {g["id"]: g for g in conn.execute("SELECT * FROM account_groups")}
+    group_of: dict[int, int] = {}
     for r in rows:
         on_dependent = r["account_id"] in found.dependent_accounts
         internal = r["id"] in found.internal_ids and not on_dependent
         c = classify(r, rules, internal)
-        if r["id"] in found.to_dependent:
-            c = Classification("dependent_account", "dependent", "kids", "allowance", "spending")
-        elif r["id"] in found.from_dependent:
-            c = Classification("dependent_account", "dependent", "money_in", "from_kids", "other_in")
+        g = groups.get(found.to_dependent.get(r["id"]) or found.from_dependent.get(r["id"]))
+        if g is not None:
+            group_of[r["id"]] = g["id"]
+            label = "separate_account" if g["behaviour"] == "separate" else "dependent_account"
+            not_counted = g["behaviour"] == "separate" and g["sent_as"] == "transfer"
+            if not_counted:
+                internal = True
+                c = Classification(label, "dependent", "transfers", "separate", "internal")
+            elif r["id"] in found.to_dependent:
+                c = Classification(label, "dependent", g["category"], g["subcategory"], "spending")
+            elif g["behaviour"] == "supported" and g["money_back"] == "reduce":
+                # Money given back reduces what was sent, in the same category.
+                c = Classification(label, "dependent", g["category"], g["subcategory"], "refund")
+            else:
+                c = Classification(label, "dependent", "money_in", "returned", "other_in")
         o = overrides.get(r["id"])
         if o:
             if o["merchant"]:
@@ -199,6 +212,8 @@ def rebuild(conn: sqlite3.Connection, rules: Rules, today: date | None = None,
         conn.executemany(f"INSERT INTO transactions_clean({', '.join(CLEAN_COLUMNS)}) VALUES "
                          f"({', '.join('?' * len(CLEAN_COLUMNS))})",
                          [tuple(row[c] for c in CLEAN_COLUMNS) for row in clean])
+        conn.execute("DELETE FROM transaction_groups")
+        conn.executemany("INSERT INTO transaction_groups(raw_id, group_id) VALUES (?,?)", list(group_of.items()))
         conn.execute("DELETE FROM recurring_members")
         conn.execute("DELETE FROM recurring_series")
         for row, ids in zip(out_rows + in_rows, out_members + in_members):

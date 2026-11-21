@@ -237,7 +237,7 @@ def evaluate(conn: sqlite3.Connection, s: dict, data_dir: Path, today: date) -> 
     if s["balance_below_ron"]:
         total = conn.execute(
             """SELECT sum(b.amount_minor / 100.0) FROM accounts a JOIN balance_snapshots b ON b.account_id = a.id
-               WHERE a.active = 1 AND a.role = 'own' AND a.currency = 'RON' AND b.id = (SELECT id FROM balance_snapshots
+               WHERE a.active = 1 AND a.group_id IS NULL AND a.currency = 'RON' AND b.id = (SELECT id FROM balance_snapshots
                      WHERE account_id = a.id ORDER BY fetched_at DESC, id DESC LIMIT 1)""").fetchone()[0]
         if total is not None and total < s["balance_below_ron"]:
             out.append(Alert(f"bal:{today.isoformat()}", "Balance is low",

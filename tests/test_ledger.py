@@ -157,7 +157,8 @@ def test_card_top_up_is_an_own_transfer(conn, rules):
 
 def test_childs_account_allowance_and_exclusion(conn, rules):
     sync.register_session(conn, session("Revolut", [("me", "RON", "CACC"), ("kid", "RON", "CACC")]))
-    conn.execute("UPDATE accounts SET role='dependent', own_ibans='[]' WHERE uid='kid'")
+    conn.execute("INSERT INTO account_groups(id, name, behaviour, category, subcategory) VALUES (1, 'Kid', 'supported', 'kids', 'allowance')")
+    conn.execute("UPDATE accounts SET group_id=1, own_ibans='[]' WHERE uid='kid'")
     kid_id = {"other": {"identification": "kid-revolut-id"}}
     store(conn, "me", [
         tx("50", "2026-10-03", name="KID EXAMPLE", other=kid_id["other"], text="To KID EXAMPLE"),   # matched by amount
@@ -175,15 +176,64 @@ def test_childs_account_allowance_and_exclusion(conn, rules):
     me = lambda d, a: rows[("revolut_ron", d, a)]
     assert (me("2026-10-03", -50.0)["category"], me("2026-10-03", -50.0)["subcategory"]) == ("kids", "allowance")
     assert me("2026-10-20", -20.0)["category"] == "kids"                     # no matching credit: known by name
-    assert (me("2026-10-25", 40.0)["kind"], me("2026-10-25", 40.0)["subcategory"]) == ("other_in", "from_kids")
+    assert (me("2026-10-25", 40.0)["kind"], me("2026-10-25", 40.0)["subcategory"]) == ("other_in", "returned")
     assert all(r["kind"] == "dependent" and r["is_internal_transfer"] == 0
                for k, r in rows.items() if k[0] == "revolut_ron_2")
     s = queries.spending_summary(conn, date_from="2026-10-01", date_to="2026-10-31")
     assert s["total_outflow_ron"] == 170.0          # 100 Lidl + 50 + 20 allowance; the kid's own Lidl is not counted
     assert s["other_money_in_ron"] == 40.0
     assert "KID" not in str(s) and "EXAMPLE" not in str(s)
-    acc = {a["account"]: a for a in []}
     conn.executemany("INSERT INTO balance_snapshots(account_id, fetched_at, balance_type, amount_minor, currency)"
                      " SELECT id, '2026-11-01', 'ITAV', ?, 'RON' FROM accounts WHERE uid=?", [(100000, "me"), (5000, "kid")])
     b = queries.balances(conn)
     assert (b["total_ron"], b["dependent_total_ron"]) == (1000.0, 50.0)
+
+
+def _two_people(conn, rules, **alpha):
+    sync.register_session(conn, session("Revolut", [("me", "RON", "CACC"), ("a", "RON", "CACC"), ("b", "RON", "CACC")]))
+    conn.execute("INSERT INTO account_groups(id, name, behaviour) VALUES (1, 'Alpha', 'supported')")
+    for col, value in alpha.items():
+        conn.execute(f"UPDATE account_groups SET {col}=? WHERE id=1", (value,))
+    conn.execute("INSERT INTO account_groups(id, name, behaviour, category, subcategory) VALUES (2, 'Beta', 'supported', 'kids', 'allowance')")
+    conn.execute("UPDATE accounts SET group_id=1, own_ibans='[]' WHERE uid='a'")
+    conn.execute("UPDATE accounts SET group_id=2, own_ibans='[]' WHERE uid='b'")
+    store(conn, "me", [tx("60", "2026-10-03", name="PERSON ALPHA", text="To PERSON ALPHA"),
+                       tx("25", "2026-10-08", debit=False, name="PERSON ALPHA", text="back"),
+                       tx("70", "2026-10-04", name="PERSON BETA", text="To PERSON BETA")])
+    store(conn, "a", [tx("60", "2026-10-03", debit=False, name="ME", text="From ME"),
+                      tx("25", "2026-10-08", name="ME", text="back")])
+    store(conn, "b", [tx("70", "2026-10-04", debit=False, name="ME", text="From ME")])
+    ledger.rebuild(conn, rules, today=date(2026, 11, 5))
+    return {(r["booking_date"], r["amount"]): dict(r) for r in
+            conn.execute("SELECT * FROM transactions_clean WHERE account_alias='revolut_ron'")}
+
+
+def test_each_group_has_its_own_category(conn, rules):
+    rows = _two_people(conn, rules, category="family", subcategory="parents", money_back="reduce")
+    assert (rows[("2026-10-03", -60.0)]["category"], rows[("2026-10-03", -60.0)]["subcategory"]) == ("family", "parents")
+    assert rows[("2026-10-08", 25.0)]["kind"] == "refund"            # money back reduces the group's category
+    assert rows[("2026-10-04", -70.0)]["category"] == "kids"
+    s = queries.spending_summary(conn, date_from="2026-10-01", date_to="2026-10-31")
+    assert s["total_outflow_ron"] == 105.0                           # 60 - 25 + 70
+    groups = {g["group_id"]: g["n"] for g in conn.execute("SELECT group_id, count(*) AS n FROM transaction_groups GROUP BY 1")}
+    assert groups == {1: 2, 2: 1}
+
+
+def test_separate_group_is_a_transfer(conn, rules):
+    rows = _two_people(conn, rules, behaviour="separate", sent_as="transfer")
+    assert {rows[k]["kind"] for k in [("2026-10-03", -60.0), ("2026-10-08", 25.0)]} == {"internal"}
+    s = queries.spending_summary(conn, date_from="2026-10-01", date_to="2026-10-31")
+    assert s["total_outflow_ron"] == 70.0 and s["other_money_in_ron"] == 0
+
+
+def test_a_move_between_a_groups_pockets_is_not_my_transfer(conn, rules):
+    sync.register_session(conn, session("Revolut", [("me", "RON", "CACC"), ("kid", "RON", "CACC"),
+                                                    ("kid-pocket", "RON", "SVGS")]))
+    conn.execute("INSERT INTO account_groups(id, name, behaviour) VALUES (1, 'Kid', 'supported')")
+    conn.execute("UPDATE accounts SET group_id=1, own_ibans='[]' WHERE uid IN ('kid', 'kid-pocket')")
+    store(conn, "me", [tx("12", "2026-08-09", name="Example Cafe")])
+    store(conn, "kid", [tx("12", "2026-08-10", text="To RON Trips", ref="shared-1")])
+    store(conn, "kid-pocket", [tx("12", "2026-08-10", debit=False, text="To RON Trips", ref="shared-1")])
+    ledger.rebuild(conn, rules, today=date(2026, 9, 1))
+    mine = conn.execute("SELECT kind, category FROM transactions_clean WHERE account_alias='revolut_ron'").fetchone()
+    assert mine["kind"] == "spending" and mine["category"] != "family"

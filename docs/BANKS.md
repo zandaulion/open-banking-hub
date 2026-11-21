@@ -50,10 +50,11 @@ rules. These are the banks Bank Hub was built against, and what it does about ea
 - **At most 20 transactions per request, and no "next page".** A full answer holds the *oldest*
   20 of the range asked for, so Bank Hub asks again from the last day it reached, and saves each
   answer straight away. A request spans a year at most.
-- **A low daily request limit.** A few requests per account per sync, so two years of history take
-  several days. If BRD's limit is hit, that sync skips BRD and continues next time. Unattended
-  access reaches back 90 days; right after a new consent the bank answers for older dates too, so
-  a fresh link fetches older history first.
+- **A low daily request limit** ("TPP maximum number of hits was reached"). A few requests per account per
+  sync, spent in this order: the current month, then the days before it that earlier syncs did not reach,
+  then older history (two years take several days; statements fill it in at once). When the limit is hit,
+  what arrived is kept and the rest waits for the next sync. Unattended access reaches back 90 days; right
+  after a new consent the bank answers for older dates too, so a fresh link fetches older history first.
 - **The credit card is not offered over open banking** (the Control Panel and the consent list
   show only current accounts). Add its monthly statement instead: see below.
 - **The description is `type|channel|reference|party|account or card|…`.** Bank Hub uses the

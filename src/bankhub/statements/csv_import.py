@@ -135,9 +135,12 @@ def sniff(text: str, delimiter: str | None = None) -> dict:
             guess["value_date"] = i
     text_cols = [i for i in text_cols if i != guess["value_date"]]
     text_cols.sort(key=lambda i: -sum(len(v) for v in col(i, data)))
-    if text_cols:
-        guess["description"] = text_cols[0]
-        guess["counterparty"] = next((i for i in text_cols[1:] if headers and any(w in headers[i] for w in HEADER_WORDS["counterparty"])), None)
+    # A column headed like a description or a payee is taken as one; otherwise the longest text describes.
+    named = lambda kind, cols: next((i for i in cols if i < len(headers) and any(w in headers[i] for w in HEADER_WORDS[kind])), None)
+    guess["description"] = named("description", text_cols)
+    guess["counterparty"] = named("counterparty", [i for i in text_cols if i != guess["description"]])
+    if guess["description"] is None:
+        guess["description"] = next((i for i in text_cols if i != guess["counterparty"]), None)
     return {"delimiter": delimiter, "columns": width, "total_rows": len(rows), "rows": [r[:14] for r in rows[:8]], "guess": guess}
 
 

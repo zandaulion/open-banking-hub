@@ -35,7 +35,12 @@ with bank-specific quirks described in [docs/BANKS.md](docs/BANKS.md).
   <tr>
     <td align="center"><img src="docs/screenshots/payment-light.png" alt="A payment: change its category for this payment or the payee, or mark it as a one-off" width="250"><br><strong>A payment</strong></td>
     <td align="center"><img src="docs/screenshots/sort-light.png" alt="Sort: unrecognised payees, biggest first" width="250"><br><strong>Sort</strong></td>
-    <td align="center"><img src="docs/screenshots/accounts-light.png" alt="Accounts: balances, consents and bank linking" width="250"><br><strong>Accounts</strong></td>
+    <td align="center"><img src="docs/screenshots/accounts-light.png" alt="Accounts: balances, a credit card from its statements, a child's account in a group" width="250"><br><strong>Accounts</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/card-light.png" alt="A credit card added from its statements: owed, limit, due date and instalment plans" width="250"><br><strong>Credit card</strong></td>
+    <td align="center"><img src="docs/screenshots/csv-light.png" alt="Importing a CSV from any bank: the columns are guessed and confirmed once" width="250"><br><strong>CSV import</strong></td>
+    <td></td>
   </tr>
 </table>
 
@@ -165,6 +170,9 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
   history goes, when backups last ran) and **notifications** for this phone: a large payment, a low
   balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that
   stopped. By default notifications say what happened, without amounts or payees on the lock screen.
+- **Groups**: someone else's money (a child's or a parent's accounts, a business, a person you send money
+  to) goes in a group. Its own payments are shown but not counted, and what you send it counts the way you
+  choose: spending in its own category, or a transfer.
 - **Statements**: add a monthly statement (PDF) or a CSV from any bank. A credit card that open banking
   does not share is read from its statements, and an account's history fills in at once instead of over days
   (see [docs/BANKS.md](docs/BANKS.md#statements)).

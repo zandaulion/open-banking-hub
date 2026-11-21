@@ -71,3 +71,9 @@ def test_bad_input_is_refused_without_quoting_the_file(conn):
     sync.register_session(conn, session("ING", [("ing", "RON", "CACC")]))
     with pytest.raises(StatementError, match="not linked"):
         statements.store(conn, csv_import.statement_from_csv(SEMICOLON, _mapping(SEMICOLON), bank="ING", alias="nope", currency="RON"))
+
+
+def test_headings_decide_the_description_and_the_payee():
+    text = "Date;Description;Payee;Amount\n03.11.2026;Card;A much longer payee name SRL;-45,50\n04.11.2026;Rent;Another long payee name SRL;-120,00\n"
+    g = csv_import.sniff(text)["guess"]
+    assert (g["description"], g["counterparty"]) == (1, 2)

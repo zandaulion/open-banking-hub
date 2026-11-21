@@ -140,3 +140,10 @@ def test_the_brd_readers_follow_the_reader_convention():
 def test_unknown_statements_say_what_is_supported():
     with pytest.raises(StatementError, match="BRD current account.*CSV"):
         parse_statement("Some other bank's statement")
+
+
+def test_a_card_alias_is_a_slug_of_the_bank_name(conn):
+    st = parse_brd_card(statement(MAIN_IBAN))
+    st.bank = "Example Card Bank"
+    store_statement(conn, st)
+    assert conn.execute("SELECT alias FROM accounts WHERE source='statement'").fetchone()[0] == "example_card_bank_card"

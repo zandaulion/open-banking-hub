@@ -92,6 +92,23 @@ within two days, and the counterparty names seen in those matches. How it counts
 Group names stay in the owner's app (`account_groups`, `transaction_groups`); the redacted ledger carries
 only the category.
 
+## Statements
+
+`bankhub/statements/` reads statements: a PDF (through `pdftotext -layout`) with a bank's own reader, or a
+CSV from any bank with a column mapping the owner confirms (remembered per account). A reader registers
+itself and follows the convention in CONTRIBUTING.md; every reader checks the lines it read against the
+statement's own totals and reports a mismatch as a warning.
+
+- **Current account:** only payments the account does not have yet are added (same amount within two
+  days counts as already there), with a `stmt-` reference. When the sync later stores the bank's own record
+  of a payment, it replaces the statement line, keeping any category the owner set.
+- **Credit card the bank does not share:** an account of its own (`source = 'statement'`, a placeholder
+  consent so the sync never touches it), with `card_statements` (owed, limit, due date) and `card_plans`
+  (instalment plans). What is owed is a negative balance reported apart from the total. A repayment names
+  the paying IBAN, so it is a transfer between own accounts.
+
+Statement files are never stored: only the lines and figures read from them.
+
 ## Recurring payments and income
 
 Payments are grouped by payee and then by similar amounts. A group is recurring when most

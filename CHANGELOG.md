@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The demo (`bankhub demo`) now includes a child's account in a group and a credit card added from three
+  statements, and the screenshots are new.
+- A card added from statements of a bank whose name has spaces gets a proper alias (`demo_card_bank_card`).
+- CSV import: a column headed like a description or a payee is taken as one before the longest text.
 - BRD sync: the current month comes first, then the days before it that earlier syncs did not reach, then
   older history; so an account that is weeks behind is up to date after one sync. A request limit reached
   after some payments arrived no longer reports the account as skipped. Pending payments are only cleared

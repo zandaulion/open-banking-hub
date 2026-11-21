@@ -31,7 +31,7 @@ fost folosite zilnic la construirea aplicației; celelalte ar trebui să funcți
   <tr><th>Bancă</th><th>Stare</th><th>De știut</th></tr>
   <tr><td>Revolut</td><td><span class="tag ok">testată</span></td><td>Aproximativ doi ani de istoric la prima conectare. Fiecare monedă și pușculiță e un cont separat; mutările între ele și alimentările cu cardul altei bănci sunt recunoscute ca transferuri între conturile tale.</td></tr>
   <tr><td>ING</td><td><span class="tag ok">testată</span></td><td>Aproximativ doi ani de istoric. Numele beneficiarului vine în descriere, iar aplicația îl citește de acolo; tipul tranzacției (rate, asigurare, comisioane, depozite) e folosit la categorii.</td></tr>
-  <tr><td>BRD</td><td><span class="tag ok">testată</span></td><td>Un singur consimțământ activ pe aplicație: conectezi conturile în Control Panel, ștergi acel consimțământ în MyBRD, apoi conectezi BRD din aplicație. BRD dă câte 20 de tranzacții pe cerere, așa că istoricul se completează în câteva zile.</td></tr>
+  <tr><td>BRD</td><td><span class="tag ok">testată</span></td><td>Un singur consimțământ activ pe aplicație: conectezi conturile în Control Panel, ștergi acel consimțământ în MyBRD, apoi conectezi BRD din aplicație. BRD dă câte 20 de tranzacții pe cerere, așa că istoricul se completează în câteva zile; luna curentă vine prima. Extrasele PDF din MyBRD (cont curent și card de credit) se pot adăuga direct în aplicație: cardul de credit nu e oferit prin open banking, iar istoricul apare imediat.</td></tr>
   <tr><td>Banca Comercială Română (BCR), Banca Transilvania, CEC Bank, Raiffeisen, UniCredit Bank, Libra Internet Bank, Exim Banca Românească</td><td><span class="tag">netestată</span></td><td rowspan="2">Disponibile prin Enable Banking. Dacă le folosești, deschide un issue pe GitHub cu ce ai observat (fără date reale).</td></tr>
   <tr><td>N26, Wise, bunq, PayPal, Genome, DiPocket, Airwallex, Ferratum Bank, iBanFirst</td><td><span class="tag">netestată</span></td></tr>
 </table>
@@ -41,6 +41,7 @@ fost folosite zilnic la construirea aplicației; celelalte ar trebui să funcți
   <div class="card"><h3>Comercianți cunoscuți</h3><p>Mega Image, Lidl, Kaufland, Profi, eMAG, Altex, Glovo, Tazz, Bolt, Digi, Orange, PPC, Engie, E-bloc, Amparcat, impozite locale și multe altele, sortate automat.</p></div>
   <div class="card"><h3>Cursul BNR</h3><p>Plățile în euro sau alte monede sunt convertite în lei la cursul oficial BNR din ziua plății.</p></div>
   <div class="card"><h3>Facturi variabile</h3><p>Curentul, gazul și întreținerea sunt recunoscute ca plăți lunare chiar dacă suma diferă de la lună la lună.</p></div>
+  <div class="card"><h3>Extrase și CSV</h3><p>Extrasele BRD (PDF) sunt citite direct, iar de la orice altă bancă poți importa un CSV. Se adaugă doar plățile care lipsesc, verificate cu totalurile extrasului.</p></div>
   <div class="card"><h3>Plăți mari, separat</h3><p>Avansul pentru o casă, rambursarea anticipată a unui credit sau impozitul pe o vânzare apar separat, fără să strice graficul lunii.</p></div>
 </div>
 

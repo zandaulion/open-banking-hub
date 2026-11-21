@@ -6,19 +6,21 @@ import random
 import uuid
 from datetime import date, timedelta
 
-from . import sync
+from . import statements, sync
 from .db import transaction, utcnow
 from .normalize import to_minor
 
 EMPLOYER = "Northwind Software SRL"
 FRIEND = "Ana Example"
 LANDLORD = "Mihai Example"
+CHILD = "ALEX EXAMPLE"
+CARD_IBAN = "RO00DEMO0000000000000077"
 
 
 def _tx(amount: float, day: date, *, debit: bool = True, name: str | None = None, text: str | None = None,
-        iban: str | None = None) -> dict:
+        iban: str | None = None, other: dict | None = None) -> dict:
     party = {"name": name}
-    account = {"iban": iban, "other": None}
+    account = {"iban": iban, "other": other}
     nobody = {"name": None}
     return {
         "entry_reference": str(uuid.uuid4()),
@@ -51,7 +53,7 @@ def generate(months: int = 14, seed: int = 7) -> dict[str, list[dict]]:
     rng = random.Random(seed)
     today = date.today()
     start = (today.replace(day=1) - timedelta(days=31 * (months - 1))).replace(day=1)
-    salary, daily, savings = [], [], []
+    salary, daily, savings, kid = [], [], [], []
 
     def days_in(month_start: date):
         d = month_start
@@ -115,20 +117,29 @@ def generate(months: int = 14, seed: int = 7) -> dict[str, list[dict]]:
         if m.month == 3 and (d := on(18)):
             salary.append(_tx(68500.0, d, name="Example Motors SRL", iban="RO00DEMO0000000000000013",
                               text="Car purchase"))
+        # A child's account: a weekly allowance from the everyday account, spent at a few places.
+        for d in month_days:
+            if d.weekday() == 0:
+                daily.append(_tx(50, d, name=CHILD, other={"identification": "demo-child-account"}, text=f"To {CHILD}"))
+                kid.append(_tx(50, d, debit=False, name="ME EXAMPLE", text="From ME EXAMPLE"))
+            if d.weekday() in (2, 5) and rng.random() < 0.6:
+                kid.append(_tx(round(rng.uniform(8, 35), 2), d, name=rng.choice(["Example Bakery", "Cinema City", "Lidl"])))
         if (d := on(19)) and rng.random() < 0.5:
             daily.append(_tx(round(rng.uniform(40, 200), 2), d, debit=False, name="eMAG", text="Refund from eMAG"))
         m = (m.replace(day=28) + timedelta(days=4)).replace(day=1)
-    return {"demo-salary": salary, "demo-daily": daily, "demo-savings": savings}
+    return {"demo-salary": salary, "demo-daily": daily, "demo-savings": savings, "demo-kid": kid}
 
 
 def load(conn, months: int = 14) -> int:
     """Registers two made-up banks and stores the generated transactions and balances."""
     sync.register_session(conn, _session("Demo Bank", "demo-1", [("demo-salary", "CACC", "RO00DEMO0000000000000001")]))
     sync.register_session(conn, _session("Demo Card Bank", "demo-2", [("demo-daily", "CACC", "RO00DEMO0000000000000002"),
-                                                                        ("demo-savings", "SVGS", None)]))
+                                                                        ("demo-savings", "SVGS", None),
+                                                                        ("demo-kid", "CACC", None)]))
     data = generate(months)
-    balances = {"demo-salary": 6830.15, "demo-daily": 1244.60, "demo-savings": 4500.00}
-    names = {"demo-salary": "Salary", "demo-daily": "Everyday", "demo-savings": "Savings"}
+    cards = _card_statements(data["demo-salary"])
+    balances = {"demo-salary": 6830.15, "demo-daily": 1244.60, "demo-savings": 4500.00, "demo-kid": 135.50}
+    names = {"demo-salary": "Salary", "demo-daily": "Everyday", "demo-savings": "Savings", "demo-kid": "Alex"}
     total = 0
     now = utcnow()
     for uid, txs in data.items():
@@ -138,4 +149,47 @@ def load(conn, months: int = 14) -> int:
             conn.execute("UPDATE accounts SET backfilled_at=?, display_name=? WHERE id=?", (now, names[uid], acc[0]))
             conn.execute("INSERT INTO balance_snapshots(account_id, fetched_at, balance_type, amount_minor, currency)"
                          " VALUES (?,?,?,?,?)", (acc[0], now, "ITAV", to_minor(balances[uid]), "RON"))
+    with transaction(conn):
+        group = conn.execute("INSERT INTO account_groups(name, behaviour, category, subcategory) "
+                             "VALUES ('Alex', 'supported', 'kids', 'allowance')").lastrowid
+        conn.execute("UPDATE accounts SET group_id=? WHERE uid='demo-kid'", (group,))
+    for st in cards:
+        total += statements.store_statement(conn, st)["new"]
     return total
+
+
+def _card_statements(salary: list[dict], seed: int = 11) -> list:
+    """Three monthly statements of a credit card the bank does not share, each repaid from the salary account."""
+    from .statements import Line, Plan, Statement
+    rng = random.Random(seed)
+    today = date.today()
+    end = today.replace(day=25) if today.day > 25 else (today.replace(day=1) - timedelta(days=1)).replace(day=25)
+    periods = []
+    for _ in range(3):
+        start = (end.replace(day=1) - timedelta(days=1)).replace(day=26)
+        periods.insert(0, (start, end))
+        end = start - timedelta(days=1)
+    out, owed, previous = [], 120000, 0
+    for start, end in periods:
+        lines = []
+        for _ in range(9):
+            day = start + timedelta(days=rng.randrange((end - start).days + 1))
+            shop = rng.choice(["eMAG", "Decathlon", "IKEA", "Netflix.com", "Booking.com", "Kaufland", "Dr. Max"])
+            cents = int(rng.uniform(40, 680) * 100)
+            lines.append(Line(date=day.isoformat(), settled=day.isoformat(), kind="purchase", amount_minor=cents,
+                              merchant=shop, text=shop))
+        if previous:
+            paid = start + timedelta(days=4)
+            lines.append(Line(date=paid.isoformat(), settled=paid.isoformat(), kind="payment", amount_minor=-previous,
+                              iban="RO00DEMO0000000000000001", text="Card repayment"))
+            salary.append(_tx(previous / 100, paid, name="Demo credit card", iban=CARD_IBAN, text="Card repayment"))
+        spent = sum(ln.amount_minor for ln in lines if ln.amount_minor > 0)
+        owed += spent - previous
+        out.append(Statement(bank="Demo Card Bank", iban=CARD_IBAN, period_start=start.isoformat(), period_end=end.isoformat(),
+                             owed_minor=owed, limit_minor=1000000, available_minor=1000000 - owed, total_due_minor=spent,
+                             min_due_minor=owed // 20, due_date=(end + timedelta(days=25)).isoformat(),
+                             installments_due_minor=25000, installments_future_minor=125000, lines=lines,
+                             plans=[Plan(merchant="Example Electronics", started=periods[0][0].isoformat(), initial_minor=150000,
+                                         installment_minor=25000, number="2/6", remaining_minor=100000)]))
+        previous = spent
+    return out

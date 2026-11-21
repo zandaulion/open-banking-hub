@@ -47,9 +47,10 @@ def _card_account(conn: sqlite3.Connection, st: Statement) -> int:
     conn.execute("INSERT INTO consents(session_id, institution, country, valid_until, created_at, status)"
                  " VALUES (?,?,?,?,?,'statement')", (session, st.bank, "RO", "9999-12-31T00:00:00Z", utcnow()))
     taken = {r[0] for r in conn.execute("SELECT alias FROM accounts")}
-    alias, n = f"{st.bank.lower()}_card", 2
+    base = f"{sync._slug(st.bank)}_card"
+    alias, n = base, 2
     while alias in taken:
-        alias, n = f"{st.bank.lower()}_card_{n}", n + 1
+        alias, n = f"{base}_{n}", n + 1
     return conn.execute(
         "INSERT INTO accounts(uid, session_id, institution, alias, currency, cash_account_type, identity_hash, own_ibans,"
         " backfilled_at, display_name, source) VALUES (?,?,?,?,?,?,?,?,?,?,'statement')",

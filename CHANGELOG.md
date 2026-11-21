@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Month chart: the selected month is outlined instead of recoloured, and the other months are no longer
+  dimmed, so a month keeps the same colours whether or not it is selected. Income is a neutral grey
+  track (what was not spent is grey headroom), spending is blue and anything over income is red.
 - CSV import for any bank: Accounts → Add a statement → Import a CSV. Choose the account and the file;
   the delimiter, date format, number format and columns are guessed, and confirmed once (remembered for
   the account). Only payments the account does not have yet are added, like a PDF statement.

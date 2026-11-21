@@ -199,7 +199,7 @@ function barPath(x, y, w, hgt, r) {
 // The chart keeps its scroll position across re-renders; selecting a month never moves it, unless
 // the selected month would otherwise be off-screen (then it scrolls just enough to show it).
 function scrollChart(points, { id, visible = 14, height = 150, onTap, label = 'Chart', allAccent = false,
-                                maxOf = (p) => p.value, draw = null, labelOf = null } = {}) {
+                                maxOf = (p) => p.value, draw = null, labelOf = null, dimOthers = true } = {}) {
   // Room above the bars for the year labels, and for value marks when there are any.
   const STEP = 24, top = labelOf ? 32 : 18, bottom = 20, gap = 2, H = height + (labelOf ? 14 : 0);
   const n = points.length, cols = Math.max(n, visible), W = cols * STEP;
@@ -207,7 +207,7 @@ function scrollChart(points, { id, visible = 14, height = 150, onTap, label = 'C
   const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img', 'aria-label': label });
   svg.style.width = `${(cols / visible) * 100}%`;
   const offset = cols - n;   // fewer months than columns: keep them on the right, like the full chart
-  const hasSelection = points.some((p) => p.on);
+  const hasSelection = dimOthers && points.some((p) => p.on);
   points.forEach((p, k) => {
     const i = k + offset, x = i * STEP + gap / 2, bw = STEP - gap;
     // Everything but the selected month is dimmed, so the selection reads at a glance.
@@ -564,7 +564,7 @@ async function renderMonth(params) {
             hasIncome ? (t.outflow_ron > t.income_ron ? `over by ${ron(t.outflow_ron - t.income_ron)}` : `left ${ron(t.income_ron - t.outflow_ron)}`) : null,
             t.one_off_out_ron ? `one-off out ${ron(t.one_off_out_ron)}` : null,
             t.one_off_in_ron ? `one-off in ${ron(t.one_off_in_ron)}` : null].filter(Boolean).join(' · ') })),
-      { id: 'month-trend', label: 'Income and spending per month',
+      { id: 'month-trend', label: 'Income and spending per month', dimOthers: false,
         onTap: (p) => { if (p.month !== m) setTimeout(() => go('month', { m: p.month }, { replace: true }), 250); },
         maxOf: (p) => Math.max(p.outflow_ron, hasIncome ? p.income_ron : 0),
         labelOf: (p) => (p.one_off_out_ron ? `+${k(p.one_off_out_ron)}` : p.one_off_in_ron ? `↓${k(p.one_off_in_ron)}` : ''),
@@ -577,6 +577,11 @@ async function renderMonth(params) {
           if (hasIncome && sp > inc) {
             svg.append(s('path', { d: barPath(g.x, g.base - sp, g.bw, sp - inc, 4), class: 'bar over' + dash }));
             if (inc > 0) svg.append(s('line', { x1: g.x - 1, x2: g.x + g.bw + 1, y1: g.base - inc, y2: g.base - inc, class: 'income-line' }));
+          }
+          // The selected month is outlined, not recoloured: every month keeps the same meaning of its colours.
+          if (p.on) {
+            const top_ = Math.max(inc, sp);
+            svg.append(s('rect', { x: g.x - 2, y: g.base - top_ - 2, width: g.bw + 4, height: top_ + 2, rx: 5, class: 'selbar' }));
           }
         } }),
     h('p', { class: 'chart-note' }, 'Tap a month to open it, or swipe the page left and right · scroll the chart for older months · dashed: incomplete month'),

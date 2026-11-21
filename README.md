@@ -44,6 +44,14 @@ with bank-specific quirks described in [docs/BANKS.md](docs/BANKS.md).
   </tr>
 </table>
 
+On a laptop the same app uses the width: a sidebar, Month with the chart beside the figures, and
+Activity as a table with the payment open beside it.
+
+<p>
+  <img src="docs/screenshots/desktop-month.png" alt="Month on a laptop: the figures beside a chart of every month, categories and payees side by side" width="49%">
+  <img src="docs/screenshots/desktop-activity.png" alt="Activity on a laptop: payments as a table, the selected payment open in a side panel" width="49%">
+</p>
+
 All screenshots use made-up data from `bankhub demo`.
 
 ## Try it without a bank

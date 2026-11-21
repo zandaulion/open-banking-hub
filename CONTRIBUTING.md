@@ -77,5 +77,6 @@ payment, columns that shift, a payroll line that names the holder). Describe the
 
 ## Pull requests
 
-Keep them focused, describe what you verified (tests, a demo run, a browser check), and update the
+Keep them focused, describe what you verified (tests, a demo run, a browser check at phone and laptop
+widths), and update the
 affected documentation.

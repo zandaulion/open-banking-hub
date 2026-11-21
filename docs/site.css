@@ -18,6 +18,8 @@ h2 { margin-top: 44px; font-size: 26px; }
 .shots { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin: 28px 0; }
 .shots figure { margin:0; text-align:center; font-size:14px; color:var(--muted); }
 .shots img { width:100%; border-radius: 18px; border:1px solid var(--line); }
+.shots.wide { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); margin-top: 0; }
+.shots.wide img { border-radius: 10px; }
 .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
 .card { background: var(--card); border:1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
 .card h3 { margin: 0 0 6px; font-size: 17px; }

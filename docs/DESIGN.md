@@ -146,6 +146,10 @@ and its own `web.db` for invitations and devices.
   cached.
 - **Bank linking:** `/callback` accepts only a state that this device started in the last hour.
 - **Import:** runs in the background, so the phone is not left waiting.
+- **Layouts:** one set of screens. Below 900 px it is the phone layout (bottom tabs, sheets). From 900 px a
+  sidebar, cards in columns and per-screen grids (`main#view[data-layout]` in `style.css`); lists open their
+  details in a side panel instead of a sheet. Charts are drawn to the width of their card (`fitPx`), so
+  text keeps its size; crossing 900, 1200 or 1500 px redraws.
 
 ## Alerts
 

@@ -12,6 +12,7 @@
   drawn to the width of their card, so text keeps its size on a big screen. Between 900 and 1199 px the
   grids are half and half. Keys: ← and → change month, / searches Activity, Esc closes. The phone layout
   is unchanged.
+- Laptop screenshots in the README and on the website.
 
 ## 0.5.0 (2026-11-21)
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Current account statements: a debit BRD prints two columns right of its usual place (some months, for some
+  lines) was read as a credit, so a loan instalment showed as income. Credits are now told apart by how far
+  right they sit, and the totals check catches any line that is still misplaced.
 - Statements for BRD current accounts. Add a month's statement (PDF) and its payments appear at once, for
   history the sync has not fetched yet. They are checked against the statement's totals and balances,
   not counted twice if the sync already has them, and replaced by the bank's own records when the sync

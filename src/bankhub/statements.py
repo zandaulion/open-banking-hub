@@ -246,6 +246,9 @@ def parse_brd_card(text: str) -> Statement:
 # ---------------------------------------------------------------- BRD current account
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+# Debit amounts end at or before the "Credit" header's column (BRD prints some up to two columns past it), credit
+# amounts about fifteen columns further right: anything this far past the header is a credit.
+CREDIT_SLACK = 8
 ACCOUNT_ENTRY = re.compile(rf"^\s{{0,3}}({DATE})\s{{2,}}(\S.*?)\s+({AMOUNT})\s+({DATE})\s*$")
 ACCOUNT_ENTRY_START = re.compile(rf"^\s{{0,3}}{DATE}\s{{2,}}\S")
 
@@ -258,7 +261,7 @@ def parse_brd_account(text: str) -> AccountStatement:
     header = next((r for r in rows if "Data oper." in r and "Credit" in r), None)
     if not (iban and period and currency and header):
         raise StatementError("The statement's account, period or columns were not found.")
-    credit_col = header.index("Credit")               # amounts ending past this column are credits
+    credit_col = header.index("Credit") + CREDIT_SLACK
     st = AccountStatement(bank="BRD", iban=iban.group(1), currency=currency.group(1),
                           period_start=_iso(period.group(1)), period_end=_iso(period.group(2)))
     opening = re.search(rf"Sold initial / Start balance\s+({AMOUNT})", text)

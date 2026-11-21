@@ -85,9 +85,9 @@ Total rate scadente in viitor: 1.500,00 Lei
     return head + "\n".join(rows) + "\n" + plans
 
 
-def _entry(date: str, desc: str, cents: int, details: list[str], value: str | None = None) -> list[str]:
+def _entry(date: str, desc: str, cents: int, details: list[str], value: str | None = None, end: int | None = None) -> list[str]:
     amount = _money(abs(cents))
-    end = 116 if cents > 0 else 92
+    end = end or (116 if cents > 0 else 92)
     first = date.ljust(13) + desc
     return [first.ljust(end - len(amount)) + amount + "   " + (value or date)] + [" " * 14 + d for d in details]
 
@@ -108,7 +108,7 @@ def account_statement(iban: str, extra_debit: int = 0) -> str:
              " " * 14 + "1234abcd-1234-1234-1234-123456789012", " " * 14 + "Dl EXAMPLE PERSON", " " * 14 + iban,
              " " * 14 + "Plata Salarii", ""]
     rows += _entry("12/10/2026", "Rambursare credit", -285000, ["Automat", "OP 1234567890123456", "Dl EXAMPLE PERSON", LOAN_IBAN,
-                                                              "Rata-12/10/2026", "Credit 2650.00", "Dobanda 200.00"])
+                                                              "Rata-12/10/2026", "Credit 2650.00", "Dobanda 200.00"], end=104)   # BRD sometimes prints a debit two columns right
     rows += _entry("15/10/2026", "Plata asigurare", -7000, ["Automat", "OP 1234567890123457", "Dl EXAMPLE PERSON", LOAN_IBAN])
     rows += _entry("20/10/2026", "Utilizare POS comerciant strain.", -300000, ["Card/Terminale", "OP 1234567/12346", "Card nr....1234",
                                                                               "Revolut**1234* Dublin IRL"])

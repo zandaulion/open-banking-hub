@@ -1,4 +1,5 @@
 import base64
+from pathlib import Path
 import json
 from datetime import date, timedelta
 
@@ -101,3 +102,18 @@ def test_a_gone_subscription_is_removed(setup, conn, monkeypatch):
     monkeypatch.setattr(pywebpush, "webpush", gone)
     assert al.test(dev["id"]) == 0
     assert al.status(dev["id"])["subscribed"] is False
+
+
+def test_card_payment_alert_waits_for_the_due_date_and_stops_once_paid(conn):
+    from bankhub import statements
+    from bankhub.web.alerts import DEFAULTS, evaluate
+    from statement_fixture import CARD_IBAN, statement
+    sync.register_session(conn, session("BRD", [("main", "RON", "CACC")]))
+    statements.store_statement(conn, statements.parse_brd_card(statement("RO00TEST0000000000000001")))
+    due = date(2026, 11, 19)
+    keys = lambda today: [a.key for a in evaluate(conn, dict(DEFAULTS), Path("/nonexistent"), today) if a.key.startswith("card:")]
+    assert keys(due - timedelta(days=5)) == []
+    assert keys(due - timedelta(days=3)) == [f"card:brd_card:{due}"]
+    assert keys(due) == [f"card:brd_card:{due}"] and keys(due + timedelta(days=1)) == []
+    store(conn, "main", [tx("400", "2026-11-17", name="Bank", iban=CARD_IBAN)])          # the minimum (350.28) left
+    assert keys(due - timedelta(days=1)) == []

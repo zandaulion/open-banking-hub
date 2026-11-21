@@ -4,7 +4,9 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     BANKHUB_DATA_DIR=/data BANKHUB_BIND=0.0.0.0 TZ=Europe/Bucharest
 
-RUN pip install --no-cache-dir uv && useradd --create-home --uid 10001 bankhub && \
+# poppler-utils: pdftotext, to read credit card statements.
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir uv && useradd --create-home --uid 10001 bankhub && \
     mkdir -p /data && chown bankhub:bankhub /data
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./

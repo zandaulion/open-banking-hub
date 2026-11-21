@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import uvicorn
+from starlette.concurrency import run_in_threadpool
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -30,6 +31,7 @@ from pydantic import BaseModel
 from .. import fx, ledger, sync
 from ..config import Config, _read_env_file, load_config
 from ..db import connect, connect_readonly, transaction
+from .. import statements
 from ..enablebanking import EnableBanking
 from ..rules import load_rules
 from . import data, rules_edit
@@ -344,6 +346,23 @@ def create_app(cfg: WebConfig) -> FastAPI:
             if not found:
                 raise HTTPException(404)
         return {"rebuilt": rebuild()}
+
+    @app.post("/api/statements")
+    async def add_statement(request: Request, rebuild_after: bool = True, dev: dict = Depends(device)):
+        """A credit card statement: the PDF itself is the request body. Only what is read from it is kept."""
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > statements.MAX_PDF_BYTES:
+            raise HTTPException(413, "That PDF is larger than 5 MB.")
+        body = await request.body()
+        try:
+            st = statements.parse_brd_card(await run_in_threadpool(statements.pdf_text, body))
+            with write_lock, closing(connect(cfg.core.db_path)) as conn:
+                result = statements.store_statement(conn, st)
+        except statements.StatementError as e:
+            raise HTTPException(400, str(e))
+        if rebuild_after:
+            result["rebuilt"] = rebuild()
+        return result
 
     @app.get("/api/inbox")
     def inbox(dev: dict = Depends(device)):

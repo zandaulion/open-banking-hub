@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from . import fx, ledger, queries, redaction, sync
+from . import fx, ledger, queries, redaction, statements, sync
 from .config import load_config
 from .db import connect, connect_readonly, transaction, utcnow
 from .enablebanking import EnableBanking
@@ -172,6 +172,22 @@ def sync_cmd(force: bool = typer.Option(False, help="Ignore the daily request bu
 def rebuild():
     """Re-run FX, transfer detection, categorization and recurring detection (no bank requests)."""
     typer.echo(_rebuild(_db()))
+
+
+@app.command("import-statement")
+def import_statement(files: list[Path]):
+    """Add credit card statements (PDF) for a card the bank does not share. Prints counts only."""
+    conn = _db()
+    for f in files:
+        try:
+            st = statements.parse_brd_card(statements.pdf_text(f.read_bytes()))
+            r = statements.store_statement(conn, st)
+        except statements.StatementError as e:
+            typer.echo(f"{f.name}: {e}")
+            continue
+        typer.echo(f"{f.name}: {r['period_start']} to {r['period_end']}, {r['new']} new of {r['lines']} lines"
+                   + "".join(f"\n  warning: {w}" for w in r["warnings"]))
+    typer.echo(_rebuild(conn))
 
 
 @app.command()

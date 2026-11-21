@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Credit cards from statements. A bank that does not share a credit card (BRD) can still be covered:
+  on Accounts, add the monthly statement (PDF), several at once for older months. The app reads it
+  itself and keeps only the payments, what is owed, the limit, the due date and the instalment plans,
+  not the file. Purchases are categorised like any card payment, a repayment from your own account is a
+  transfer, and a purchase turned into instalments is counted once. What is owed is shown apart from your
+  total. Health warns when the latest statement is over 40 days old, and an alert comes three days
+  before the payment is due (unless the minimum has already been paid). Needs `pdftotext`.
 - Groups are recognised more strictly. A card payment never joins a group because its amount matched one
   on the group's account (a 5 RON ride the day a child got 5 RON), and a matching amount only teaches a
   payee name when most transfers to that name match, twice at least. Payments are then assigned by name.

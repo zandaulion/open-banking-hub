@@ -206,7 +206,32 @@ def accounts(conn: sqlite3.Connection) -> dict:
     gs = groups(conn)
     for g in gs:
         g["accounts"] = json.loads(g["accounts"])
-    return {"balances": balances, "status": queries.sync_status(conn), "groups": gs}
+    return {"balances": balances, "status": queries.sync_status(conn), "groups": gs, "cards": cards(conn)}
+
+
+def cards(conn: sqlite3.Connection) -> list[dict]:
+    """Credit cards added from statements: what the latest statement says (owner-only: plans name merchants)."""
+    out = []
+    for a in conn.execute("SELECT id, alias, coalesce(display_name, alias) AS name, institution FROM accounts"
+                          " WHERE source = 'statement' AND active = 1 ORDER BY alias"):
+        s = conn.execute("SELECT * FROM card_statements WHERE account_id = ? ORDER BY period_end DESC LIMIT 1",
+                         (a["id"],)).fetchone()
+        if not s:
+            continue
+        first = conn.execute("SELECT min(period_start), count(*) FROM card_statements WHERE account_id = ?", (a["id"],)).fetchone()
+        money = lambda v: None if v is None else v / 100
+        out.append({
+            "alias": a["alias"], "name": a["name"], "institution": a["institution"], "period_end": s["period_end"],
+            "statements": first[1], "history_from": first[0],
+            "owed_ron": money(s["owed_minor"]), "limit_ron": money(s["limit_minor"]), "available_ron": money(s["available_minor"]),
+            "total_due_ron": money(s["total_due_minor"]), "min_due_ron": money(s["min_due_minor"]), "due_date": s["due_date"],
+            "installments_due_ron": money(s["installments_due_minor"]),
+            "installments_future_ron": money(s["installments_future_minor"]),
+            "plans": [{"merchant": p["merchant"], "started": p["started"], "initial_ron": money(p["initial_minor"]),
+                       "installment_ron": money(p["installment_minor"]), "number": p["number"],
+                       "remaining_ron": money(p["remaining_minor"])}
+                      for p in conn.execute("SELECT * FROM card_plans WHERE statement_id = ? ORDER BY started", (s["id"],))]})
+    return out
 
 
 BEHAVIOURS = ("supported", "separate")
@@ -355,7 +380,7 @@ def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
                       (SELECT min(booking_date) FROM transactions_raw WHERE account_id = a.id) AS oldest,
                       (SELECT max(at) FROM sync_results WHERE account_id = a.id AND skipped IS NULL) AS last_ok,
                       (SELECT max(ts) FROM api_requests WHERE account_id = a.id AND kind = 'transactions') AS last_request
-               FROM accounts a WHERE a.active = 1 ORDER BY a.institution, a.alias"""):
+               FROM accounts a WHERE a.active = 1 AND a.source = 'bank' ORDER BY a.institution, a.alias"""):
         last = conn.execute("SELECT at, skipped FROM sync_results WHERE account_id=? ORDER BY id DESC LIMIT 1",
                             (a["id"],)).fetchone()
         accounts.append({"name": a["name"], "institution": a["institution"],
@@ -367,6 +392,9 @@ def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
                                       "recent_pending": a["recent_cursor"]},
                          "last_skipped": last["skipped"] if last and last["skipped"] else None,
                          "last_skipped_at": last["at"] if last and last["skipped"] else None})
+    statements = [{"name": r["name"], "period_end": r["period_end"]} for r in conn.execute(
+        """SELECT coalesce(a.display_name, a.alias) AS name, max(s.period_end) AS period_end FROM accounts a
+           JOIN card_statements s ON s.account_id = a.id WHERE a.active = 1 GROUP BY a.id ORDER BY a.alias""")]
     run = conn.execute("SELECT started_at, status, error FROM sync_runs ORDER BY id DESC LIMIT 1").fetchone()
     backups = data_dir / "backups"
     snaps = sorted(p.name for p in backups.iterdir() if p.is_dir() and len(p.name) == 16) if backups.exists() else []
@@ -374,5 +402,5 @@ def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
         if snaps else None
     marker = backups / ".offsite-ok"
     offsite = marker.read_text().strip() if marker.exists() else None
-    return {"accounts": accounts, "history_target": target, "last_run": dict(run) if run else None,
+    return {"accounts": accounts, "statements": statements, "history_target": target, "last_run": dict(run) if run else None,
             "backup_local": local, "backup_offsite": offsite}

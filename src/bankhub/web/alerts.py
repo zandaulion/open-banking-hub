@@ -23,6 +23,7 @@ DEFAULTS = {
     "income_late": True,
     "price_change": True,
     "consent_expiring": True,
+    "card_due": True,              # a credit card payment is due within three days
     "health": True,                # a bank that stopped syncing, a backup that stopped running
     "details": False,              # amounts and payees in the notification text
 }
@@ -271,6 +272,28 @@ def evaluate(conn: sqlite3.Connection, s: dict, data_dir: Path, today: date) -> 
                                  f"Access to {r['institution']} ends in {max(days, 0)} days. "
                                  "Renew it from Accounts.",
                                  f"A bank connection ends in {max(days, 0)} days.", "./#accounts"))
+
+    if s["card_due"]:
+        for r in conn.execute(
+                """SELECT a.alias, a.own_ibans, s.period_end, s.due_date, s.min_due_minor FROM accounts a
+                   JOIN card_statements s ON s.account_id = a.id
+                   WHERE a.source = 'statement' AND s.period_end = (SELECT max(period_end) FROM card_statements
+                                                                    WHERE account_id = a.id)"""):
+            days = (date.fromisoformat(r["due_date"]) - today).days if r["due_date"] else None
+            if days is None or not 0 <= days <= 3:
+                continue
+            # Paid already? A payment of at least the minimum, to the card's account, after the statement.
+            ibans = json.loads(r["own_ibans"] or "[]")
+            marks = ",".join("?" * len(ibans)) or "''"
+            paid = ibans and conn.execute(
+                f"SELECT 1 FROM transactions_raw WHERE counterparty_iban IN ({marks}) AND amount_minor <= ? "
+                "AND booking_date > ? LIMIT 1", (*ibans, -(r["min_due_minor"] or 0), r["period_end"])).fetchone()
+            if paid:
+                continue
+            minimum = f" Minimum {r['min_due_minor'] / 100:,.2f} RON." if r["min_due_minor"] else ""
+            out.append(Alert(f"card:{r['alias']}:{r['due_date']}", "Credit card payment due",
+                             f"Your credit card payment is due on {r['due_date']}.{minimum}",
+                             "A credit card payment is due soon.", "./#accounts"))
 
     if s["health"]:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat(timespec="seconds")

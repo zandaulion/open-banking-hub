@@ -113,7 +113,8 @@ async function api(path, { method = 'GET', body } = {}) {
   if (method !== 'GET') monthCache.clear();
   const opts = { method, credentials: 'same-origin', headers: {} };
   if (method !== 'GET') { opts.headers['X-Bankhub'] = '1'; }
-  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  if (body instanceof Blob) { opts.headers['Content-Type'] = body.type || 'application/octet-stream'; opts.body = body; }
+  else if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   let r;
   try {
     // A hanging network (plane Wi-Fi, a VPN with no route) counts as offline after a few seconds.
@@ -1014,6 +1015,7 @@ function alertsCard() {
       tick('income_late', 'Regular income is late'),
       tick('price_change', 'A regular payment changes amount'),
       tick('consent_expiring', 'A bank connection is about to end'),
+      tick('card_due', 'A credit card payment is due'),
       tick('health', 'A bank stopped syncing, or backups stopped'),
       tick('details', 'Show amounts and payees on the lock screen'));
     const save = h('button', { class: 'btn' }, 'Save alert settings');
@@ -1066,6 +1068,10 @@ function healthCard(hd) {
   const offOk = hd.backup_offsite && (Date.now() - new Date(hd.backup_offsite).getTime()) < 36 * 3.6e6;
   rows.push(line(localOk, 'Local backup', ago(hd.backup_local)));
   rows.push(line(offOk, 'Off-site backup', hd.backup_offsite ? ago(hd.backup_offsite) : 'not set up'));
+  for (const st of hd.statements || []) {
+    const age = (Date.now() - new Date(`${st.period_end}T00:00:00`).getTime()) / 864e5;
+    rows.push(line(age <= 40, `${st.name} statement`, age <= 40 ? `up to ${dayLabel(st.period_end)}` : `last one ended ${dayLabel(st.period_end)}: add the new one`));
+  }
   if (hd.last_run && hd.last_run.status === 'error') rows.push(line(false, 'Last sync', hd.last_run.error));
   return h('section', { class: 'card' }, h('h2', {}, 'Health'), h('ul', { class: 'rows' }, rows));
 }
@@ -1125,7 +1131,7 @@ function groupSummary(g) {
 async function openGroupSheet(g, accounts) {
   const d = await api('accounts');
   if (!state.categories) state.categories = (await api('rules')).categories;
-  const all = d.balances.accounts;
+  const all = d.balances.accounts.filter((a) => a.role !== 'card');
   const members = new Set(g ? g.accounts : accounts || []);
   const name = h('input', { value: g ? g.name : '', placeholder: 'e.g. Alex, Mum, My company', maxlength: '40', autocomplete: 'off' });
   const behaviour = h('select', {}, Object.entries(BEHAVIOUR).map(([v, label]) => h('option', { value: v, selected: (g ? g.behaviour : 'supported') === v }, label)));
@@ -1199,6 +1205,55 @@ async function openGroupSheet(g, accounts) {
     h('div', { class: 'actions' }, remove, h('button', { class: 'btn', onclick: () => sheet.close() }, 'Cancel'), save));
 }
 
+// Adds one or more credit card statements (PDF). Each is sent as it is; the server keeps only what it reads.
+function statementPicker(onDone, label = 'Add a statement (PDF)') {
+  const msg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
+  const input = h('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, hidden: true });
+  const btn = h('button', { class: 'btn primary', disabled: !!state.offline }, state.offline ? 'Needs the server' : label);
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', async () => {
+    const files = [...input.files];
+    if (!files.length) return;
+    btn.disabled = true;
+    const notes = [];
+    let added = 0;
+    for (const [i, f] of files.entries()) {
+      msg.textContent = `Reading ${i + 1} of ${files.length}…`;
+      try {
+        const r = await api(`statements?rebuild_after=${i === files.length - 1}`, { method: 'POST', body: new Blob([f], { type: 'application/pdf' }) });
+        added += r.new;
+        if (r.warnings.length) notes.push(`${dayLabel(r.period_end)}: ${r.warnings.join(' ')}`);
+      } catch (e) { notes.push(`${f.name}: ${e.message}`); }
+    }
+    msg.textContent = `${added} new payment${added === 1 ? '' : 's'} added.${notes.length ? ' ' + notes.join(' ') : ''}`;
+    btn.disabled = false; input.value = '';
+    if (added || !notes.length) setTimeout(onDone, notes.length ? 4000 : 800);
+  });
+  return h('div', {}, btn, input, msg);
+}
+
+function openCardSheet(c) {
+  let sheet;
+  const used = c.limit_ron ? Math.min(100, (c.owed_ron / c.limit_ron) * 100) : 0;
+  const plans = c.plans.length ? h('ul', { class: 'rows', style: 'margin-top:8px' }, c.plans.map((p) => h('li', {},
+    h('div', { class: 'row-head' }, h('span', { class: 'name' }, p.merchant), h('span', { class: 'amt num' }, `${ron(p.installment_ron)} / month`)),
+    h('div', { class: 'row-sub' }, h('span', {}, `${p.number} · ${ron(p.initial_ron)} from ${dayLabel(p.started)}`), h('span', {}, `${ron(p.remaining_ron)} left`))))) : '';
+  sheet = sheetOpen(h('h2', {}, c.name),
+    h('p', { class: 'muted', style: 'margin:4px 0 0' }, `${c.institution} · statement up to ${dayLabel(c.period_end)} · ${c.statements} statement${c.statements === 1 ? '' : 's'} added${c.history_from ? `, from ${dayLabel(c.history_from)}` : ''}`),
+    h('div', { class: 'hero num', style: 'margin-top:10px' }, nf0.format(c.owed_ron), h('small', {}, `RON owed${c.limit_ron ? ` of ${nf0.format(c.limit_ron)}` : ''}`)),
+    c.limit_ron ? h('div', { class: 'meter' }, h('span', { style: `width:${used}%` })) : '',
+    h('p', { class: 'faint', style: 'font-size:13px;margin:8px 0 0' },
+      [c.due_date ? `Due ${dayLabel(c.due_date)}` : '', c.min_due_ron ? `minimum ${ron(c.min_due_ron, 2)}` : '', c.total_due_ron ? `in full ${ron(c.total_due_ron, 2)}` : ''].filter(Boolean).join(' · ')),
+    c.installments_future_ron ? h('p', { class: 'faint', style: 'font-size:13px;margin:4px 0 0' },
+      `Instalments: ${ron(c.installments_due_ron)} due with this statement, ${ron(c.installments_future_ron)} still to come.`) : '',
+    plans,
+    h('div', { style: 'margin-top:14px' }, statementPicker(() => { sheet.close(); refresh(); }, 'Add the next statement')),
+    h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => {
+      addEventListener('popstate', () => go('tx', { account: c.alias }), { once: true });
+      sheet.close();
+    } }, 'See its payments'), h('button', { class: 'btn', onclick: () => sheet.close() }, 'Close')));
+}
+
 async function renderAccounts(params) {
   setTitle('Accounts');
   const d = await api('accounts');
@@ -1217,7 +1272,7 @@ async function renderAccounts(params) {
     h('p', { class: 'eyebrow' }, 'All accounts'),
     h('div', { class: 'hero num' }, nf0.format(b.total_ron), h('small', {}, 'RON')),
     b.total_eur ? h('div', { class: 'delta' }, `≈ ${nf0.format(b.total_eur)} EUR at the BNR rate`) : '',
-    h('ul', { class: 'rows', style: 'margin-top:12px' }, b.accounts.filter((a) => !a.group_id).map((a) => h('li', {},
+    h('ul', { class: 'rows', style: 'margin-top:12px' }, b.accounts.filter((a) => !a.group_id && a.role !== 'card').map((a) => h('li', {},
       h('button', { class: 'rowbtn', onclick: () => openRenameSheet(a, d.groups) },
         h('div', { class: 'row-head' }, h('span', { class: 'name' }, a.name), h('span', { class: 'amt num' }, money(a.amount, a.currency))),
         h('div', { class: 'row-sub' }, h('span', {}, `${a.institution}${a.name !== a.alias ? ` · ${a.alias}` : ''}`),
@@ -1235,6 +1290,17 @@ async function renderAccounts(params) {
           h('div', { class: 'row-sub' }, h('span', {}, `${a.institution} · ${a.alias}`)))))) : h('p', { class: 'muted' }, 'No accounts yet.'));
   });
   const newGroup = h('p', { class: 'center-text' }, h('button', { class: 'btn', onclick: () => openGroupSheet(null) }, 'New group'));
+  const cardsCard = h('section', { class: 'card' }, h('h2', {}, 'Credit cards'),
+    d.cards.length ? h('ul', { class: 'rows' }, d.cards.map((c) => h('li', {},
+      h('button', { class: 'rowbtn', onclick: () => openCardSheet(c) },
+        h('div', { class: 'row-head' }, h('span', { class: 'name' }, c.name), h('span', { class: 'amt num' }, `${ron(c.owed_ron)} owed`)),
+        c.limit_ron ? h('div', { class: 'meter' }, h('span', { style: `width:${Math.min(100, (c.owed_ron / c.limit_ron) * 100)}%` })) : '',
+        h('div', { class: 'row-sub' }, h('span', {}, c.due_date ? `Due ${dayLabel(c.due_date)}${c.min_due_ron ? ` · min ${ron(c.min_due_ron)}` : ''}` : `Up to ${dayLabel(c.period_end)}`),
+          h('span', {}, c.limit_ron ? `${ron(c.available_ron)} available` : '')))))) : '',
+    h('p', { class: 'faint', style: 'margin:8px 0 10px;font-size:13px' }, d.cards.length
+      ? 'Owed on a card is not part of your total above. Add each new statement once a month.'
+      : "Banks don't share credit cards. Add the monthly statement (PDF) from your bank's app: the app reads it here and keeps only the payments, not the file. BRD statements for now."),
+    statementPicker(() => refresh()));
 
   const syncBtn = h('button', { class: 'btn', disabled: !!state.offline }, state.offline ? 'Sync needs the server' : 'Sync now');
   const syncMsg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
@@ -1275,7 +1341,7 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
-  view.replaceChildren(total, ...groupCards, newGroup, banks, healthCard(d.health), alertsCard(), link);
+  view.replaceChildren(total, cardsCard, ...groupCards, newGroup, banks, healthCard(d.health), alertsCard(), link);
 }
 
 offlinePrune();

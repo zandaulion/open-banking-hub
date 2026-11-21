@@ -12,6 +12,9 @@ state lives in the data directory (`$BANKHUB_DATA_DIR`, default `~/.local/share/
 | `categories.yaml` | your own categorization rules |
 | `backups/` | nightly snapshots |
 
+Reading credit card statements (PDF) needs `pdftotext`: `apt install poppler-utils` (or
+`dnf install poppler-utils`). The Docker image has it. Without it everything else works.
+
 ## Keep it private
 
 The app shows your real transactions, with names, to every device you register. Reach it only

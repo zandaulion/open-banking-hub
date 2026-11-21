@@ -298,3 +298,21 @@ def test_group_payee_names_round_trip(cfg):
     assert g["payees"] == ["Jane Example"]
     assert [f["name"] for f in g["found"]] == ["Jane Example"]            # her transfer now counts for the group
     assert _ids(app)["Jane Example"]["category"] == "family"
+
+
+def test_statement_upload_shows_a_card_and_refuses_junk(cfg, monkeypatch):
+    from bankhub import statements
+    from statement_fixture import statement
+    monkeypatch.setattr(statements, "pdf_text", lambda data: statement("RO00TEST0000000000000001")
+                        if data.startswith(b"%PDF-") else (_ for _ in ()).throw(statements.StatementError("That file is not a PDF.")))
+    app = _device(cfg)
+    junk = app.post("/api/statements", content=b"hello", headers={**H, "Content-Type": "application/pdf"})
+    assert junk.status_code == 400 and "not a PDF" in junk.json()["detail"]
+    r = app.post("/api/statements", content=b"%PDF-1.4 fake", headers={**H, "Content-Type": "application/pdf"})
+    assert r.status_code == 200 and r.json()["new"] == 7 and r.json()["warnings"] == []
+    assert app.post("/api/statements", content=b"%PDF-1.4 fake", headers={"Content-Type": "application/pdf"}).status_code == 403
+    d = app.get("/api/accounts").json()
+    card = d["cards"][0]
+    assert (card["owed_ron"], card["limit_ron"], card["due_date"], len(card["plans"])) == (9849.84, 10000.0, "2026-11-19", 2)
+    assert d["balances"]["card_owed_ron"] == 9849.84
+    assert d["health"]["statements"][0]["period_end"] == "2026-10-25"

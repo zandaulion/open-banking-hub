@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Weekly summary: a notification once a week (Monday 08:00 by default; choose the day and hour under
+  Notifications) and a card at the top of Month. Last week's day-to-day spending against your usual week,
+  with regular payments shown apart; the month so far against the same days of last month; categories well
+  above usual; payments worth a look (perhaps charged twice, much bigger than usual, a new payee, a new regular
+  payment); and what is due in the coming week, card payments included. It says when an account looks
+  incomplete, and leaves out cards added from statements. Rules and arithmetic, no AI.
+- BRD sync: within the current month it carries on a few days before the newest payment it already has,
+  instead of asking for the month's first page again after being cut short by the bank's limit.
+- The "credit card payment is due" alert switch was not saved; it is now.
 - Statements in the standard formats many banks export: CAMT.053 (the European ISO 20022 XML statement,
   versions .02 to .08) and OFX/QFX (1 and 2). Payee, IBAN and description come from the file; a CAMT
   statement is checked against its opening and closing balances. If a file's account is not a linked IBAN,

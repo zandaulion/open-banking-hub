@@ -117,3 +117,64 @@ def test_card_payment_alert_waits_for_the_due_date_and_stops_once_paid(conn):
     assert keys(due) == [f"card:brd_card:{due}"] and keys(due + timedelta(days=1)) == []
     store(conn, "main", [tx("400", "2026-11-17", name="Bank", iban=CARD_IBAN)])          # the minimum (350.28) left
     assert keys(due - timedelta(days=1)) == []
+
+
+def _history(conn, rules):
+    """Eight weeks of about 300 RON of groceries, then a week with a lot more, a double charge and a new payee."""
+    from datetime import date as d
+    weeks = [d(2026, 11, 16) - timedelta(days=7 * i) for i in range(1, 9)]
+    rows = [tx("100", (w + timedelta(days=k)).isoformat(), name="Lidl") for w in weeks for k in (0, 2, 4)]
+    rows += [tx("40", (w + timedelta(days=1)).isoformat(), name="Example Bakery") for w in weeks]
+    rows += [tx("100", "2026-11-16", name="Lidl"), tx("450", "2026-11-18", name="Lidl"), tx("300", "2026-11-19", name="Lidl"),
+             tx("64.99", "2026-11-20", name="Example Shop"), tx("64.99", "2026-11-20", name="Example Shop"),
+             tx("900", "2026-11-21", name="Example Furniture SRL")]
+    store(conn, "rev-ron", rows)
+    ledger.rebuild(conn, rules, today=d(2026, 11, 23))
+
+
+def test_weekly_summary_compares_with_the_usual_week(setup, conn, rules):
+    from bankhub.web import weekly
+    _history(conn, rules)
+    s = weekly.summary(conn, date(2026, 11, 23))                      # a Monday: covers 16 to 22 November
+    # The bakery every week is a regular payment, so the usual day-to-day week is the 300 of groceries.
+    assert (s["start"], s["end"], s["usual_ron"]) == ("2026-11-16", "2026-11-22", 300.0)
+    assert s["spent_ron"] == round(100 + 450 + 300 + 64.99 * 2 + 900, 2)
+    kinds = {(x["kind"], x["payee"]) for x in s["worth_a_look"]}
+    assert ("twice", "Example Shop") in kinds and ("new", "Example Furniture SRL") in kinds and ("bigger", "Lidl") in kinds
+    assert any(c["category"] == "groceries" for c in s["categories_up"])
+    detailed, private = weekly.notification(s)
+    assert "above usual" in detailed and private == "Your weekly summary is ready."
+    assert "Lidl" not in detailed                                    # payees stay inside the app
+
+
+def test_weekly_summary_is_sent_once_at_the_chosen_time(setup, conn, rules):
+    from datetime import datetime
+    al, dev, sent = setup
+    _history(conn, rules)
+    assert al.weekly(conn, now=datetime(2026, 11, 23, 9, 0)) is None          # no phone subscribed yet
+    al.subscribe(dev["id"], _sub())
+    assert al.weekly(conn, now=datetime(2026, 11, 23, 9, 0))["end"] == "2026-11-22"
+    assert sent[-1]["body"] == "Your weekly summary is ready." and sent[-1]["url"] == "./#month?week=1"
+    assert al.weekly(conn, now=datetime(2026, 11, 23, 10, 0)) is None         # once
+    assert al.weekly(conn, now=datetime(2026, 11, 30, 7, 59)) is None         # before 08:00
+    assert al.weekly(conn, now=datetime(2026, 12, 1, 9, 0)) is None           # missed by more than 20 hours
+    al.save_settings({"weekly_day": 4, "weekly_hour": 18})                    # Friday 18:00
+    assert al.weekly(conn, now=datetime(2026, 11, 27, 18, 5))["start"] == "2026-11-20"
+    al.save_settings({"weekly": False})
+    assert al.weekly(conn, now=datetime(2026, 12, 4, 18, 5)) is None
+
+
+def test_weekly_settings_are_kept_in_range(setup):
+    al, _, _ = setup
+    s = al.save_settings({"weekly_day": 9, "weekly_hour": -3})
+    assert (s["weekly_day"], s["weekly_hour"]) == (6, 0)
+    assert al.save_settings({"weekly_day": 2.7})["weekly_day"] == 2
+
+
+def test_a_week_with_a_silent_busy_account_says_it_may_be_incomplete(setup, conn, rules):
+    from bankhub.web import weekly
+    _history(conn, rules)                       # payments every week, the last on the 21st: complete
+    assert weekly.summary(conn, date(2026, 11, 23))["incomplete"] == []
+    s = weekly.summary(conn, date(2026, 11, 30))                      # nothing at all from the 22nd on
+    assert [x["account"] for x in s["incomplete"]] == ["revolut_ron"]
+    assert "may not be complete" in weekly.notification(s)[0]

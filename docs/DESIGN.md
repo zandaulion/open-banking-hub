@@ -177,6 +177,16 @@ After every sync, `bankhub/web/alerts.py` checks:
 - a bank with no successful sync for two days;
 - a local backup older than two days.
 
+The **weekly summary** (`web/weekly.py`) is sent by the running app itself, which checks every five minutes
+whether the chosen day and hour (Monday 08:00 by default, local time) have passed; one missed by more than
+20 hours waits for the next week. It covers the seven days before it is sent: day-to-day spending (regular
+payments shown apart) against the median of the eight weeks before, categories well above their usual week,
+payments worth a look (perhaps charged twice, much bigger than usual for that payee, a new payee above 300 RON,
+a new regular payment), and what is due in the coming week. Cards added from statements are left out of the
+weekly figures, since their purchases arrive once a month, and an account that usually has payments every
+week but none in the last days is named as probably incomplete. The notification says only "Your weekly
+summary is ready" unless details are on; the summary itself is a card at the top of Month.
+
 Each alert has a stable key and is sent once, as Web Push (VAPID key in `secrets/vapid.pem`), to every
 registered device that turned notifications on. Only the push services of Chrome, Firefox, Edge and
 Safari are accepted as endpoints. The text leaves out amounts and payees unless the owner turns

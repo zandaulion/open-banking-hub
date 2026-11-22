@@ -302,9 +302,14 @@ def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
     # last syncs did not reach are filled in after it, with what is left of the request budget.
     month_start = today.replace(day=1) - timedelta(days=OVERLAP_DAYS)
     head = [start < month_start]
+    # Within the month, start a few days before the newest payment the bank already gave us, so a sync cut short
+    # by the bank's limit carries on instead of asking for the same first page again.
+    newest = conn.execute("SELECT max(booking_date) FROM transactions_raw WHERE account_id=? AND status='BOOK'"
+                          " AND coalesce(entry_reference, '') NOT LIKE 'stmt-%'", (acc_id,)).fetchone()[0]
+    head_from = max(month_start, date.fromisoformat(newest) - timedelta(days=3)) if newest else month_start
 
     def current():
-        if head[0] and not fetch_forward(eb, account["uid"], month_start, today, cap, budget, save(None, True)):
+        if head[0] and not fetch_forward(eb, account["uid"], head_from, today, cap, budget, save(None, True)):
             head[0] = None                                   # not finished: the gap waits for the next sync
 
     def recent():

@@ -178,6 +178,8 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
   history goes, when backups last ran) and **notifications** for this phone: a large payment, a low
   balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that
   stopped. By default notifications say what happened, without amounts or payees on the lock screen.
+  A **weekly summary** (Monday 08:00 by default, any day and hour you choose) compares last week's
+  day-to-day spending with your usual week, and lists what changed, what is worth a look and what is due.
 - **Net worth**: your accounts minus what is owed on cards, month by month, worked back from today's balances.
 - **Your data**: download every transaction as CSV, or everything (accounts, groups, cards, rules) as JSON.
 - **Groups**: someone else's money (a child's or a parent's accounts, a business, a person you send money

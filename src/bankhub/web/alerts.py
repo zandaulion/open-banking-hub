@@ -26,7 +26,11 @@ DEFAULTS = {
     "card_due": True,              # a credit card payment is due within three days
     "health": True,                # a bank that stopped syncing, a backup that stopped running
     "details": False,              # amounts and payees in the notification text
+    "weekly": True,                # the weekly summary
+    "weekly_day": 0,               # 0 = Monday
+    "weekly_hour": 8,              # local time
 }
+LIMITS = {"weekly_day": 6, "weekly_hour": 23}
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     device_id  INTEGER PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
@@ -119,8 +123,11 @@ class Alerts:
         for k, default in DEFAULTS.items():
             if k in values:
                 v = values[k]
-                clean[k] = max(0, float(v)) if isinstance(default, (int, float)) and not isinstance(default, bool) \
-                    else bool(v)
+                if k in LIMITS:
+                    clean[k] = min(LIMITS[k], max(0, int(v)))
+                else:
+                    clean[k] = max(0, float(v)) if isinstance(default, (int, float)) and not isinstance(default, bool) \
+                        else bool(v)
         with self._conn() as c:
             for k, v in clean.items():
                 c.execute("INSERT OR REPLACE INTO alert_settings(key, value) VALUES (?,?)", (k, json.dumps(v)))
@@ -195,6 +202,33 @@ class Alerts:
     def test(self, device_id: int) -> int:
         return self._send_all({"title": "Bank Hub", "body": "Notifications work. You'll hear from me when something "
                                "needs a look.", "url": "./#accounts", "tag": "bankhub-test"}, only_device=device_id)
+
+    def weekly(self, bank_conn: sqlite3.Connection, now: datetime | None = None, send: bool = True) -> dict | None:
+        """Sends the weekly summary once, at the day and hour in the settings (local time). A summary missed by
+        more than 20 hours (the server was off) waits for the next week instead of arriving late."""
+        from . import weekly
+        settings = self.settings()
+        if not settings["weekly"]:
+            return None
+        now = now or datetime.now()
+        at = weekly.last_scheduled(now, int(settings["weekly_day"]), int(settings["weekly_hour"]))
+        if now - at > timedelta(hours=20):
+            return None
+        s = weekly.summary(bank_conn, at.date())
+        key = f"weekly:{s['end']}"
+        with self._conn() as c:
+            if c.execute("SELECT 1 FROM alert_log WHERE key=?", (key,)).fetchone() \
+                    or not c.execute("SELECT 1 FROM push_subscriptions LIMIT 1").fetchone():
+                return None
+        if not send:
+            return s
+        detailed, private = weekly.notification(s)
+        body = detailed if settings["details"] else private
+        sent = self._send_all({"title": "Your week", "body": body, "url": "./#month?week=1", "tag": "bankhub-weekly"})
+        with self._conn() as c:
+            c.execute("INSERT OR IGNORE INTO alert_log(key, at, title, body, url, sent) VALUES (?,?,?,?,?,?)",
+                      (key, _now(), "Your week", body, "./#month?week=1", sent))
+        return s
 
     def run(self, bank_conn: sqlite3.Connection, today: date | None = None, send: bool = True) -> list[Alert]:
         """Evaluates every condition; sends and logs the ones not sent before."""

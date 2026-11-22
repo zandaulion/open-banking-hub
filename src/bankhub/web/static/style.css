@@ -206,6 +206,8 @@ main#view { touch-action: pan-y; will-change: transform; }
   border-radius: 12px; background: var(--surface-2); color: var(--text-secondary); font-size: 14px; }
 .offline-bar .chip { min-height: 30px; padding: 4px 12px; }
 
+.weekly-when { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: -6px; }
+
 /* CSV import preview */
 .csv-preview { display: block; max-width: 100%; overflow-x: auto; font-size: 11px; border-collapse: collapse; margin-bottom: 8px; }
 .csv-preview td { border-bottom: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
@@ -237,6 +239,7 @@ main#view { touch-action: pan-y; will-change: transform; }
   /* Month: the figures and the chart side by side, then categories and payees. */
   main#view[data-layout="month"] { column-count: auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; align-items: start; }
   main#view[data-layout="month"] > .card { margin: 0; }
+  .m-week { grid-column: 1 / -1; order: 0; }
   .m-hero { grid-column: span 2; order: 1; }
   .m-trend { grid-column: span 4; order: 2; }
   .m-cats { grid-column: span 3; order: 3; }

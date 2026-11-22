@@ -641,8 +641,45 @@ async function renderMonth(params) {
           : [pretty(g.category), g.subcategory && pretty(g.subcategory)].filter(Boolean).join(' · ')),
         h('span', {}, g.back_ron ? `${ron(g.back_ron)} back` : `${g.n}×`)))))) : '';
 
-  view.replaceChildren(hero, oneOffs, trend, cats, people, payees,
+  // The weekly summary: for four days after it is due on the current month, or when opened from the notification.
+  let weekCard = '';
+  if (isCurrent || params.get('week')) {
+    try {
+      const w = await api('week');
+      const age = (Date.now() - new Date(w.at).getTime()) / 864e5;
+      if (params.get('week') || age < 4) weekCard = weekSummaryCard(w.summary);
+    } catch { /* offline without a copy: no card */ }
+  }
+  view.replaceChildren(weekCard, hero, oneOffs, trend, cats, people, payees,
     h('p', { class: 'faint center-text m-foot' }, `Booked transactions only · newest ${d.newest_transaction || '—'}`));
+}
+
+function weekSummaryCard(w) {
+  const span = `${dayLabel(w.start)} to ${dayLabel(w.end)}`;
+  const head = h('div', { class: 'delta' }, `${ron(w.day_to_day_ron)} day to day`,
+    w.usual_ron ? h('span', {}, ': ', deltaSpan(w.change_pct), ` vs your usual week (${ron(w.usual_ron)})`) : '',
+    w.regular_ron >= 1 ? `, plus ${ron(w.regular_ron)} of regular payments` : '');
+  const mo = w.month;
+  const section = (title, items) => items.length ? h('div', {}, h('p', { class: 'eyebrow', style: 'margin:14px 0 4px' }, title), h('ul', { class: 'rows' }, items)) : '';
+  const row = (name, amount, sub, onclick) => h('li', {}, h(onclick ? 'button' : 'div', { class: onclick ? 'rowbtn' : '', onclick },
+    h('div', { class: 'row-head' }, h('span', { class: 'name' }, name), h('span', { class: 'amt num' }, amount)),
+    h('div', { class: 'row-sub' }, h('span', {}, sub))));
+  const what = { twice: 'Maybe charged twice', bigger: 'Bigger than usual', new: 'New payee', subscription: 'New regular payment' };
+  return h('section', { class: 'card m-week' },
+    h('p', { class: 'eyebrow' }, `Last week · ${span}`),
+    h('div', { class: 'hero num' }, nf0.format(w.spent_ron), h('small', {}, 'RON')), head,
+    w.incomplete.length ? h('div', { class: 'notice', style: 'margin:10px 0 0' },
+      `Probably not complete: ${w.incomplete.map((x) => `${x.account} has nothing after ${dayLabel(x.newest)}`).join('; ')}. The bank has not sent the rest yet.`) : '',
+    h('p', { class: 'faint', style: 'margin:6px 0 0;font-size:13px' },
+      `${monthLabel(mo.month)} so far: ${ron(mo.spent_ron)}, against ${ron(mo.previous_ron)} in the same ${mo.days} days of ${monthLabel(mo.previous_month)}.`),
+    section('Above usual', w.categories_up.map((c) => row(pretty(c.category), ron(c.spent_ron), `usually ${ron(c.usual_ron)} a week`,
+      () => go('tx', { m: w.end.slice(0, 7), category: c.category })))),
+    section('Worth a look', w.worth_a_look.map((x) => row(x.payee, x.amount_ron != null ? ron(x.amount_ron, 2) : money(x.amount, x.currency),
+      `${what[x.kind]} · ${dayLabel(x.date)}${x.usual_ron ? ` · usually ${ron(x.usual_ron)}` : ''}`, () => go('tx', { q: x.payee })))),
+    section('Coming up', w.coming_up.map((x) => row(x.payee, money(x.amount, x.currency),
+      `${dayLabel(x.date)}${x.kind === 'card' ? ` · card payment, minimum ${ron(x.minimum, 2)}` : ''}`))),
+    w.cards_left_out.length ? h('p', { class: 'faint', style: 'margin:12px 0 0;font-size:12px' },
+      `${w.cards_left_out.join(', ')}: not in these weekly figures, because its purchases arrive with the monthly statement.`) : '');
 }
 
 // ---------------------------------------------------------------- recurring
@@ -1092,11 +1129,18 @@ function alertsCard() {
       tick('consent_expiring', 'A bank connection is about to end'),
       tick('card_due', 'A credit card payment is due'),
       tick('health', 'A bank stopped syncing, or backups stopped'),
-      tick('details', 'Show amounts and payees on the lock screen'));
+      tick('details', 'Show amounts and payees on the lock screen'),
+      tick('weekly', 'Weekly summary'),
+      h('div', { class: 'weekly-when' },
+        h('label', { class: 'field' }, 'Day', h('select', { 'data-key': 'weekly_day' },
+          ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((name, i) => h('option', { value: String(i), selected: s.weekly_day === i }, name)))),
+        h('label', { class: 'field' }, 'Time', h('select', { 'data-key': 'weekly_hour' },
+          Array.from({ length: 24 }, (_, i) => h('option', { value: String(i), selected: s.weekly_hour === i }, `${String(i).padStart(2, '0')}:00`))))),
+      h('span', { class: 'faint', style: 'font-size:12px;display:block;margin-top:-4px' }, 'Covers the seven days before it arrives: spending against your usual week, what changed, what is worth a look and what is due.'));
     const save = h('button', { class: 'btn' }, 'Save alert settings');
     save.addEventListener('click', async () => {
       const body = {};
-      for (const el of form.querySelectorAll('input')) body[el.dataset.key] = el.type === 'checkbox' ? el.checked : Number(el.value || 0);
+      for (const el of form.querySelectorAll('input, select')) body[el.dataset.key] = el.type === 'checkbox' ? el.checked : Number(el.value || 0);
       save.disabled = true;
       try { await api('alerts/settings', { method: 'POST', body }); msg.textContent = 'Saved.'; }
       catch (e) { msg.textContent = e.message; }

@@ -350,3 +350,11 @@ def test_exports_are_the_owners_data_and_need_a_device(cfg):
     assert not any(k in everything for k in ("devices", "tokens", "consents"))
     fresh = TestClient(create_app(cfg))
     assert fresh.get("/api/export.csv").status_code == 401 and fresh.get("/api/export.json").status_code == 401
+
+
+def test_week_summary_and_its_settings_through_the_api(cfg):
+    app = _device(cfg)
+    w = app.get("/api/week").json()
+    assert set(w["summary"]) >= {"start", "end", "spent_ron", "usual_ron", "worth_a_look", "coming_up", "month"}
+    st = app.post("/api/alerts/settings", json={"weekly_day": 4, "weekly_hour": 18, "card_due": False}, headers=H).json()
+    assert (st["weekly_day"], st["weekly_hour"], st["card_due"]) == (4, 18, False)

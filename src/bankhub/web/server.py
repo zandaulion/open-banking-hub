@@ -8,6 +8,7 @@ do the same from the terminal.
 """
 
 import asyncio
+import dataclasses
 import csv
 import hashlib
 import io
@@ -16,10 +17,11 @@ import json
 import os
 import re
 import threading
+import time
 import uuid
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from importlib import resources
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -65,6 +67,7 @@ class WebConfig:
     port: int
     admin_port: int
     bind: str = "127.0.0.1"   # 0.0.0.0 only inside a container whose port is published to loopback
+    background: bool = False  # the running server's own jobs (the weekly summary); off for tests
 
     @property
     def callback_url(self) -> str:
@@ -135,7 +138,11 @@ class AlertSettings(BaseModel):
     price_change: bool | None = None
     consent_expiring: bool | None = None
     health: bool | None = None
+    card_due: bool | None = None
     details: bool | None = None
+    weekly: bool | None = None
+    weekly_day: int | None = None
+    weekly_hour: int | None = None
 
 
 class AccountName(BaseModel):
@@ -194,6 +201,17 @@ def create_app(cfg: WebConfig) -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=800)
     auth = AuthStore(cfg.core.data_dir / "web.db")
     alerts = Alerts(cfg.core.data_dir / "web.db", cfg.core.data_dir)
+    if cfg.background:
+        def weekly_loop():
+            # Checks every five minutes whether the weekly summary is due; sending is logged, so it goes once.
+            while True:
+                time.sleep(300)
+                try:
+                    with closing(connect_readonly(cfg.core.db_path)) as conn:
+                        alerts.weekly(conn)
+                except Exception as e:      # never stop the loop; the next check tries again
+                    print(f"weekly summary: {type(e).__name__}: {e}", flush=True)
+        threading.Thread(target=weekly_loop, daemon=True, name="weekly-summary").start()
     limiter = RedeemLimiter()
     write_lock = threading.Lock()   # rebuilds and syncs from the UI run one at a time
     link_status: dict = {}          # the latest bank import started from the app
@@ -299,6 +317,15 @@ def create_app(cfg: WebConfig) -> FastAPI:
     @app.get("/api/alerts")
     def alerts_status(dev: dict = Depends(device)):
         return alerts.status(dev["id"])
+
+    @app.get("/api/week")
+    def week(dev: dict = Depends(device)):
+        """The latest weekly summary (worked out now, the same way it is sent), and when it was due."""
+        from . import weekly
+        st = alerts.settings()
+        at = weekly.last_scheduled(datetime.now(), int(st["weekly_day"]), int(st["weekly_hour"]))
+        with ro() as conn:
+            return {"at": at.isoformat(timespec="minutes"), "summary": weekly.summary(conn, at.date())}
 
     @app.post("/api/alerts/settings")
     def alerts_settings(body: AlertSettings, dev: dict = Depends(device)):
@@ -743,7 +770,7 @@ def create_admin_app(cfg: WebConfig) -> FastAPI:
 
 
 def serve() -> None:
-    cfg = load_web_config()
+    cfg = dataclasses.replace(load_web_config(), background=True)
 
     async def main():
         servers = [uvicorn.Server(uvicorn.Config(create_app(cfg), host=cfg.bind, port=cfg.port,

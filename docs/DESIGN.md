@@ -109,6 +109,21 @@ statement's own totals and reports a mismatch as a warning.
 
 Statement files are never stored: only the lines and figures read from them.
 
+## Net worth
+
+Balances are fetched from the day a bank is linked, so earlier month-ends are worked back: the latest balance
+minus the booked transactions since. That is only right while an account's history has no gaps, so the series
+starts at the first month every busy account's history covers without an empty month (an account with
+fewer than five payments in a typical month limits nothing). Accounts in a group are left out; a card counts
+from its first statement, at what that statement says is owed. `queries.net_worth_history` reads only
+the redacted ledger and balances, so it is safe to expose to agents.
+
+## Export
+
+`/api/export.csv` (every transaction as the owner sees it) and `/api/export.json` (accounts, balances,
+transactions, groups, card statements, recurring payments, net worth and the owner's rules file). Both need
+a registered device and contain names; neither contains keys, tokens, consents or devices.
+
 ## Recurring payments and income
 
 Payments are grouped by payee and then by similar amounts. A group is recurring when most

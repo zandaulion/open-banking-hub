@@ -81,6 +81,7 @@ main { max-width: 720px; margin: 0 auto; padding: 4px 14px 24px; }
   border: 1px solid var(--line); background: var(--surface-1); color: var(--text-primary);
   border-radius: 99px; padding: 7px 14px; cursor: pointer; min-height: 36px;
 }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 @media (prefers-color-scheme: dark) { .btn.primary { color: #0b0b0b; } }
 .btn:disabled { opacity: .55; cursor: default; }
@@ -280,7 +281,7 @@ main#view { touch-action: pan-y; will-change: transform; }
   .r-list .series .amt { grid-column: 5; grid-row: 1; text-align: right; }
 
   /* Accounts: three columns of their own, each a stack of cards. */
-  main#view[data-layout="accounts"] { column-count: auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start; }
+  main#view[data-layout="accounts"] { column-count: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
   main#view[data-layout="accounts"] .col > .card { margin: 0 0 14px; }
 
   /* Sort: one list; a payee opens beside it. */
@@ -290,6 +291,7 @@ main#view { touch-action: pan-y; will-change: transform; }
 @media (min-width: 900px) and (max-width: 1199px) {
   .m-hero, .m-trend, .m-cats, .m-payees, .m-oneoffs, .m-groups, .r-summary, .r-chart { grid-column: span 3; }
   .r-list, .r-income { grid-column: 1 / -1; }
+  main#view[data-layout="accounts"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1500px) {
   main { max-width: 1440px; }

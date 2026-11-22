@@ -74,6 +74,11 @@ payments it holds, and for a card what is owed and when. Adding the same stateme
   if there is one, the counterparty and its IBAN. The delimiter, header rows, date format and number
   format are guessed and can be changed. The choice is remembered for the account, so the next file needs
   no setup. Rows that cannot be read are counted and said so; a file where most rows fail is refused.
+- **A CAMT.053 or OFX/QFX file** (several at once work): the standard statement exports many banks offer
+  (CAMT.053 is the European ISO 20022 statement; OFX is common elsewhere). Payee, IBAN and description come
+  from the file's own fields. A CAMT statement's lines must take its opening balance to its closing one;
+  OFX has no opening balance, so it cannot be checked that way. If the file's account number is not an IBAN
+  of a linked account, the app asks which account it belongs to.
 - **A PDF** (several at once work): the kind is recognised from the file. The readers that exist are listed
   below; adding one for another bank is described in [CONTRIBUTING.md](../CONTRIBUTING.md). Bank Hub reads
   PDFs with `pdftotext` (poppler-utils; the Docker image has it).

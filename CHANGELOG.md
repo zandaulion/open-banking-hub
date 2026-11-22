@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Statements in the standard formats many banks export: CAMT.053 (the European ISO 20022 XML statement,
+  versions .02 to .08) and OFX/QFX (1 and 2). Payee, IBAN and description come from the file; a CAMT
+  statement is checked against its opening and closing balances. If a file's account is not a linked IBAN,
+  the app asks which account it is. XML with a DOCTYPE is refused.
+- Net worth by month on Accounts: accounts minus what is owed on cards, worked back from today's balances
+  and starting where every account's history is complete (it says from which month). Groups are left out.
+- Your data: download every transaction as CSV (opens in a spreadsheet), or everything as JSON.
+
 ## 0.6.0 (2026-11-21)
 
 - Laptop and desktop layout. From 900 px wide the tabs move to a sidebar, cards flow into columns (three

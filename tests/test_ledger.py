@@ -292,3 +292,46 @@ def test_a_bank_labelled_charge_is_not_matched_to_a_similar_credit(conn, rules):
     ledger.rebuild(conn, rules, today=date(2026, 11, 5))
     rows = {(r["account_alias"], abs(r["amount"])): r["is_internal_transfer"] for r in conn.execute("SELECT * FROM transactions_clean")}
     assert rows[("brd_ron", 14.24)] == 0 and rows[("revolut_ron", 14.14)] == 0
+
+
+def test_net_worth_is_worked_back_from_the_latest_balance(conn, rules):
+    sync.register_session(conn, session("Revolut", [("me", "RON", "CACC"), ("kid", "RON", "CACC")]))
+    conn.execute("INSERT INTO account_groups(id, name, behaviour) VALUES (1, 'Kid', 'supported')")
+    conn.execute("UPDATE accounts SET group_id=1 WHERE uid='kid'")
+    # Six payments a month from June, then October's and November's: a busy account with no gaps.
+    store(conn, "me", [tx("10", f"2026-{m:02d}-{d:02d}") for m in range(6, 10) for d in range(1, 7)]
+          + [tx("100", "2026-10-15"), tx("50", "2026-11-10", debit=False)] + [tx("1", f"2026-10-{d:02d}") for d in range(1, 6)])
+    store(conn, "kid", [tx("5", "2026-10-03")])
+    conn.executemany("INSERT INTO balance_snapshots(account_id, fetched_at, balance_type, amount_minor, currency)"
+                     " SELECT id, '2026-11-20T06:00:00+00:00', 'ITAV', ?, 'RON' FROM accounts WHERE uid=?", [(100000, "me"), (9900, "kid")])
+    ledger.rebuild(conn, rules, today=date(2026, 11, 20))
+    nw = {p["month"]: p["net_worth_ron"] for p in queries.net_worth_history(conn, months=6, today=date(2026, 11, 20))["months"]}
+    assert nw["2026-11"] == 1000.0
+    assert nw["2026-10"] == 950.0                       # before November's +50
+    assert nw["2026-09"] == 1055.0                      # before October's 100 and five 1s
+    assert min(nw) == "2026-06"                         # the history covers every month from June
+
+
+def test_net_worth_starts_after_a_gap_and_counts_a_card_from_its_first_statement(conn, rules):
+    sync.register_session(conn, session("Revolut", [("me", "RON", "CACC")]))
+    store(conn, "me", [tx("10", f"2026-{m:02d}-{d:02d}") for m in (6, 7, 9, 10) for d in range(1, 7)])   # August is missing
+    conn.execute("INSERT INTO balance_snapshots(account_id, fetched_at, balance_type, amount_minor, currency)"
+                 " SELECT id, '2026-10-31T06:00:00+00:00', 'ITAV', 100000, 'RON' FROM accounts")
+    from bankhub import statements
+    from statement_fixture import statement
+    statements.store_statement(conn, statements.parse_brd_card(statement("RO00TEST0000000000000001")))
+    ledger.rebuild(conn, rules, today=date(2026, 10, 31))
+    points = queries.net_worth_history(conn, months=6, today=date(2026, 10, 31))["months"]
+    assert [p["month"] for p in points] == ["2026-09", "2026-10"]          # nothing across the gap
+    assert points[-1]["cards_ron"] == -9849.84 and points[-1]["net_worth_ron"] == round(1000 - 9849.84, 2)
+    assert points[0]["cards_ron"] == 0                                      # the card's first statement ends in October
+
+
+def test_a_quiet_account_does_not_hold_net_worth_back(conn, rules):
+    sync.register_session(conn, session("Revolut", [("me", "RON", "CACC"), ("eur", "EUR", "CACC")]))
+    store(conn, "me", [tx("10", f"2026-{m:02d}-{d:02d}") for m in range(6, 11) for d in range(1, 7)])
+    store(conn, "eur", [tx("20", "2026-09-10", currency="EUR")])            # one payment, in September
+    conn.execute("INSERT INTO balance_snapshots(account_id, fetched_at, balance_type, amount_minor, currency)"
+                 " SELECT id, '2026-10-31T06:00:00+00:00', 'ITAV', 10000, currency FROM accounts")
+    ledger.rebuild(conn, rules, today=date(2026, 10, 31))
+    assert queries.net_worth_history(conn, months=6, today=date(2026, 10, 31))["from"] == "2026-06"

@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from .. import sync
 from ..db import transaction, utcnow
-from .base import AccountLine, AccountStatement, Line, Statement, StatementError
+from .base import AccountLine, AccountStatement, Line, NotLinked, Statement, StatementError
 
 
 def _find_account(conn: sqlite3.Connection, st: AccountStatement):
@@ -18,7 +18,7 @@ def _find_account(conn: sqlite3.Connection, st: AccountStatement):
     found = next((r for r in rows if (st.iban and st.iban in json.loads(r["own_ibans"] or "[]"))
                   or (st.alias and r["alias"] == st.alias)), None)
     if not found:
-        raise StatementError("This statement is for an account that is not linked. Link the bank first.")
+        raise NotLinked("This statement is for an account that is not linked. Choose the account it belongs to, or link the bank first.")
     return found
 
 

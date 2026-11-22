@@ -178,10 +178,12 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
   history goes, when backups last ran) and **notifications** for this phone: a large payment, a low
   balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that
   stopped. By default notifications say what happened, without amounts or payees on the lock screen.
+- **Net worth**: your accounts minus what is owed on cards, month by month, worked back from today's balances.
+- **Your data**: download every transaction as CSV, or everything (accounts, groups, cards, rules) as JSON.
 - **Groups**: someone else's money (a child's or a parent's accounts, a business, a person you send money
   to) goes in a group. Its own payments are shown but not counted, and what you send it counts the way you
   choose: spending in its own category, or a transfer.
-- **Statements**: add a monthly statement (PDF) or a CSV from any bank. A credit card that open banking
+- **Statements**: add a BRD statement (PDF), a CAMT.053 or OFX file, or a CSV from any bank. A credit card that open banking
   does not share is read from its statements, and an account's history fills in at once instead of over days
   (see [docs/BANKS.md](docs/BANKS.md#statements)).
 - **On a laptop**: a sidebar and wide layouts: Month with the chart beside the figures, Activity and

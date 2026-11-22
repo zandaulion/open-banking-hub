@@ -8,7 +8,9 @@ do the same from the terminal.
 """
 
 import asyncio
+import csv
 import hashlib
+import io
 import hmac
 import json
 import os
@@ -358,16 +360,22 @@ def create_app(cfg: WebConfig) -> FastAPI:
         return {"rebuilt": rebuild()}
 
     @app.post("/api/statements")
-    async def add_statement(request: Request, rebuild_after: bool = True, dev: dict = Depends(device)):
-        """A current account or credit card statement: the PDF itself is the request body. Only what is read from it is kept."""
+    async def add_statement(request: Request, rebuild_after: bool = True, account: str | None = None,
+                            dev: dict = Depends(device)):
+        """A statement file (PDF, CAMT.053 XML or OFX) as the request body. Only what is read from it is kept.
+        `account`: the linked account it belongs to, when the file does not say so in a way Bank Hub recognises."""
         declared = request.headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > statements.MAX_PDF_BYTES:
             raise HTTPException(413, "That PDF is larger than 5 MB.")
         body = await request.body()
         try:
-            st = statements.parse_statement(await run_in_threadpool(statements.pdf_text, body))
+            st = statements.parse_statement(await run_in_threadpool(statements.statement_text, body))
+            if account and isinstance(st, statements.AccountStatement):
+                st.alias = account
             with write_lock, closing(connect(cfg.core.db_path)) as conn:
                 result = statements.store(conn, st)
+        except statements.NotLinked as e:
+            raise HTTPException(409, str(e))
         except statements.StatementError as e:
             raise HTTPException(400, str(e))
         if rebuild_after:
@@ -415,6 +423,27 @@ def create_app(cfg: WebConfig) -> FastAPI:
         if body.rebuild_after:
             result["rebuilt"] = rebuild()
         return result
+
+    @app.get("/api/export.csv")
+    def export_csv(dev: dict = Depends(device)):
+        """Every transaction, as a spreadsheet. Downloaded by the owner's device only (it has names)."""
+        with ro() as conn:
+            rows = data.export_transactions(conn)
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=data.EXPORT_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8", headers={
+            "Content-Disposition": f'attachment; filename="bankhub-transactions-{date.today().isoformat()}.csv"'})
+
+    @app.get("/api/export.json")
+    def export_json(dev: dict = Depends(device)):
+        """Everything, as JSON: accounts, transactions, groups, cards, recurring payments, net worth, own rules."""
+        rules_text = cfg.core.rules_path.read_text() if cfg.core.rules_path.exists() else ""
+        with ro() as conn:
+            body = data.export_everything(conn, rules_text)
+        return Response(json.dumps(body, ensure_ascii=False, indent=1, default=str), media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="bankhub-export-{date.today().isoformat()}.json"'})
 
     @app.get("/api/inbox")
     def inbox(dev: dict = Depends(device)):

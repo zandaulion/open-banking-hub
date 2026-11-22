@@ -180,7 +180,7 @@ def import_statement(files: list[Path]):
     conn = _db()
     for f in files:
         try:
-            st = statements.parse_statement(statements.pdf_text(f.read_bytes()))
+            st = statements.parse_statement(statements.statement_text(f.read_bytes()))
             r = statements.store(conn, st)
         except statements.StatementError as e:
             typer.echo(f"{f.name}: {e}")

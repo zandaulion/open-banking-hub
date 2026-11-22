@@ -21,6 +21,10 @@ class StatementError(ValueError):
     """A problem the owner can act on. Messages never include statement content."""
 
 
+class NotLinked(StatementError):
+    """The statement's account is not one of the linked accounts; the owner can say which it is."""
+
+
 @dataclass
 class Line:
     """One line of a credit card statement."""
@@ -120,7 +124,7 @@ def parse_statement(text: str) -> "Statement | AccountStatement":
     if found:
         raise StatementError("This statement matches more than one reader: " + ", ".join(r.label for r in found) + ".")
     raise StatementError("This does not look like a statement Bank Hub can read (" +
-                         ", ".join(r.label for r in _READERS.values()) + "). For another bank, import a CSV.")
+                         ", ".join(r.label for r in _READERS.values()) + "). Otherwise, import a CSV.")
 
 
 def warn_unless(statement: "Statement | AccountStatement", ok: bool, message: str) -> None:
@@ -136,6 +140,22 @@ def money(text: str) -> int:
 
 def iso(text: str, fmt: str = "%d/%m/%Y") -> str:
     return datetime.strptime(text, fmt).date().isoformat()
+
+
+def statement_text(data: bytes) -> str:
+    """The text of an uploaded statement: a PDF's text, or an XML/OFX file decoded as it is."""
+    if data.startswith(b"%PDF-"):
+        return pdf_text(data)
+    if len(data) > MAX_PDF_BYTES:
+        raise StatementError("That file is larger than 5 MB.")
+    if b"\x00" in data[:4096]:
+        raise StatementError("That file is not a statement Bank Hub can read (PDF, CAMT.053 XML or OFX).")
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("latin-1")
 
 
 def pdf_text(data: bytes) -> str:

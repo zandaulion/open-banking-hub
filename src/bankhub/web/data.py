@@ -8,7 +8,7 @@ served to the owner's registered devices, over a private network.
 import json
 import re
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -179,6 +179,45 @@ def transactions(conn: sqlite3.Connection, *, month: str | None = None, category
     return {"total": total, "offset": offset, "transactions": rows}
 
 
+EXPORT_COLUMNS = ["date", "value_date", "account", "account_alias", "amount", "currency", "amount_ron", "payee",
+                  "description", "category", "subcategory", "kind", "own_transfer", "one_off", "recurring", "status"]
+
+
+def export_transactions(conn: sqlite3.Connection) -> list[dict]:
+    """Every transaction as the owner sees it in the app, oldest first (owner-only: it has names)."""
+    return _rows(conn.execute(
+        f"""SELECT c.booking_date AS date, t.value_date, coalesce(a.display_name, c.account_alias) AS account,
+                   c.account_alias, c.amount, c.currency, c.amount_ron, {PAYEE} AS payee, t.remittance AS description,
+                   c.category, c.subcategory, c.kind, c.is_internal_transfer AS own_transfer, c.is_one_off AS one_off,
+                   c.is_recurring AS recurring, c.status
+            FROM transactions_clean c JOIN transactions_raw t ON t.id = c.id JOIN accounts a ON a.id = t.account_id
+            ORDER BY c.booking_date, c.id"""))
+
+
+def export_everything(conn: sqlite3.Connection, rules_text: str) -> dict:
+    """The owner's data in one file: accounts, transactions, groups, cards, recurring payments and their own rules.
+    Nothing secret: no keys, tokens, consents or devices."""
+    return {
+        "format": "bankhub-export-1",
+        "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "accounts": _rows(conn.execute(
+            """SELECT a.alias, coalesce(a.display_name, a.alias) AS name, a.institution, a.currency, a.cash_account_type,
+                      a.source, g.name AS group_name FROM accounts a LEFT JOIN account_groups g ON g.id = a.group_id
+               ORDER BY a.alias""")),
+        "balances": queries.balances(conn)["accounts"],
+        "transactions": export_transactions(conn),
+        "groups": [{k: g[k] for k in ("name", "behaviour", "category", "subcategory", "money_back", "sent_as", "payees", "ignored", "accounts")}
+                   for g in groups(conn)],
+        "card_statements": _rows(conn.execute(
+            """SELECT a.alias AS account, s.period_start, s.period_end, s.owed_minor / 100.0 AS owed, s.limit_minor / 100.0 AS credit_limit,
+                      s.due_date, s.min_due_minor / 100.0 AS minimum_due FROM card_statements s JOIN accounts a ON a.id = s.account_id
+               ORDER BY a.alias, s.period_end""")),
+        "recurring": _rows(conn.execute("SELECT * FROM recurring_series ORDER BY direction, merchant")),
+        "net_worth": queries.net_worth_history(conn)["months"],
+        "rules_yaml": rules_text,
+    }
+
+
 def recurring(conn: sqlite3.Connection) -> dict:
     """The redacted recurring view, with real payee names put back for the owner."""
     data = queries.recurring_payments(conn)
@@ -207,7 +246,8 @@ def accounts(conn: sqlite3.Connection) -> dict:
     gs = groups(conn)
     for g in gs:
         g["accounts"] = json.loads(g["accounts"])
-    return {"balances": balances, "status": queries.sync_status(conn), "groups": gs, "cards": cards(conn)}
+    return {"balances": balances, "status": queries.sync_status(conn), "groups": gs, "cards": cards(conn),
+            "net_worth": queries.net_worth_history(conn)}
 
 
 def cards(conn: sqlite3.Connection) -> list[dict]:

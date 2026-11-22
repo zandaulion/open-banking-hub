@@ -14,7 +14,8 @@ from bankhub.statements import AccountStatement, Statement, StatementError
 ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def check_reader(reader_id: str, sample: str, broken: str) -> None:
+def check_reader(reader_id: str, sample: str, broken: str | None) -> None:
+    """`broken=None` only for a format that carries no totals at all (OFX has a closing balance, no opening)."""
     reader = next(r for r in statements.readers() if r.id == reader_id)
     # 1. It recognises its own statements, and only those.
     assert reader.detect(sample)
@@ -29,7 +30,8 @@ def check_reader(reader_id: str, sample: str, broken: str) -> None:
         assert isinstance(ln.amount_minor, int) and ln.amount_minor != 0 and re.match(ISO, ln.date)
     # 3. It checks the lines against the statement's own totals: clean when they add up, a warning when not.
     assert st.warnings == [], st.warnings
-    assert statements.parse_statement(broken).warnings, "a statement that does not add up must warn"
+    if broken is not None:
+        assert statements.parse_statement(broken).warnings, "a statement that does not add up must warn"
     # 4. Its errors say what is wrong without repeating the statement.
     head = "\n".join(sample.splitlines()[:6])
     try:

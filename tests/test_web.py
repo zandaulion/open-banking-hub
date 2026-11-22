@@ -306,11 +306,12 @@ def test_group_payee_names_round_trip(cfg):
 def test_statement_upload_shows_a_card_and_refuses_junk(cfg, monkeypatch):
     from bankhub import statements
     from statement_fixture import statement
-    monkeypatch.setattr(statements, "pdf_text", lambda data: statement("RO00TEST0000000000000001")
-                        if data.startswith(b"%PDF-") else (_ for _ in ()).throw(statements.StatementError("That file is not a PDF.")))
+    real = statements.statement_text
+    monkeypatch.setattr(statements, "statement_text", lambda data: statement("RO00TEST0000000000000001")
+                        if data.startswith(b"%PDF-") else real(data))
     app = _device(cfg)
     junk = app.post("/api/statements", content=b"hello", headers={**H, "Content-Type": "application/pdf"})
-    assert junk.status_code == 400 and "not a PDF" in junk.json()["detail"]
+    assert junk.status_code == 400 and "does not look like a statement" in junk.json()["detail"]
     r = app.post("/api/statements", content=b"%PDF-1.4 fake", headers={**H, "Content-Type": "application/pdf"})
     assert r.status_code == 200 and r.json()["new"] == 7 and r.json()["warnings"] == []
     assert app.post("/api/statements", content=b"%PDF-1.4 fake", headers={"Content-Type": "application/pdf"}).status_code == 403
@@ -335,3 +336,17 @@ def test_csv_preview_and_import_remember_the_mapping(cfg):
     bad = app.post("/api/statements/csv", json={"account": "revolut_ron", "csv": csv, "mapping": {**pre["guess"], "date": None}}, headers=H)
     assert bad.status_code == 400
     assert app.post("/api/statements/csv", json={"account": "revolut_ron", "csv": csv, "mapping": pre["guess"]}).status_code == 403
+
+
+def test_exports_are_the_owners_data_and_need_a_device(cfg):
+    import csv as _csv, io as _io, json as _json
+    app = _device(cfg)
+    r = app.get("/api/export.csv")
+    assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]
+    rows = list(_csv.DictReader(_io.StringIO(r.text.lstrip("﻿"))))
+    assert {row["payee"] for row in rows} >= {"Lidl", "Jane Example"} and rows[0]["account_alias"] == "revolut_ron"
+    everything = _json.loads(app.get("/api/export.json").text)
+    assert everything["format"] == "bankhub-export-1" and len(everything["transactions"]) == len(rows)
+    assert not any(k in everything for k in ("devices", "tokens", "consents"))
+    fresh = TestClient(create_app(cfg))
+    assert fresh.get("/api/export.csv").status_code == 401 and fresh.get("/api/export.json").status_code == 401

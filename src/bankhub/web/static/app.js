@@ -1281,30 +1281,48 @@ async function openGroupSheet(g, accounts) {
 }
 
 // Adds one or more credit card statements (PDF). Each is sent as it is; the server keeps only what it reads.
-function statementPicker(onDone, label = 'Add a statement (PDF)') {
+function statementPicker(onDone, label = 'Add a statement', accounts = []) {
   const msg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
-  const input = h('input', { type: 'file', accept: 'application/pdf,.pdf', multiple: true, hidden: true });
+  const ask = h('div');            // "which account is this?" for files whose account Bank Hub does not recognise
+  const input = h('input', { type: 'file', accept: '.pdf,.xml,.ofx,.qfx,application/pdf,text/xml,application/xml', multiple: true, hidden: true });
   const btn = h('button', { class: 'btn primary', disabled: !!state.offline }, state.offline ? 'Needs the server' : label);
   btn.addEventListener('click', () => input.click());
+  const send = (f, last, account) => api(`statements?rebuild_after=${last}${account ? `&account=${encodeURIComponent(account)}` : ''}`,
+    { method: 'POST', body: new Blob([f], { type: f.type || 'application/octet-stream' }) });
+  const line = (r) => `${r.account || 'Statement'} up to ${dayLabel(r.period_end)}: ${r.new} new, ${r.already_had} already there.${r.warnings.length ? ' ' + r.warnings.join(' ') : ''}`;
   input.addEventListener('change', async () => {
     const files = [...input.files];
     if (!files.length) return;
     btn.disabled = true;
-    const notes = [];
+    ask.replaceChildren();
+    const notes = [], unknown = [];
     let added = 0;
     for (const [i, f] of files.entries()) {
       msg.textContent = `Reading ${i + 1} of ${files.length}…`;
       try {
-        const r = await api(`statements?rebuild_after=${i === files.length - 1}`, { method: 'POST', body: new Blob([f], { type: 'application/pdf' }) });
+        const r = await send(f, i === files.length - 1);
         added += r.new;
-        notes.push(`${r.account || 'Statement'} up to ${dayLabel(r.period_end)}: ${r.new} new, ${r.already_had} already there.${r.warnings.length ? ' ' + r.warnings.join(' ') : ''}`);
-      } catch (e) { notes.push(`${f.name}: ${e.message}`); }
+        notes.push(line(r));
+      } catch (e) {
+        if (e.status === 409 && accounts.length) unknown.push(f); else notes.push(`${f.name}: ${e.message}`);
+      }
     }
     msg.textContent = notes.join(' ');
     btn.disabled = false; input.value = '';
-    if (added) setTimeout(onDone, 4000);
+    for (const f of unknown) {
+      const pick = h('select', { 'aria-label': 'Account' }, accounts.map((a) => h('option', { value: a.alias }, `${a.name} · ${a.institution}`)));
+      const add = h('button', { class: 'btn' }, 'Add to this account');
+      const row = h('div', { class: 'field' }, h('span', {}, `${f.name}: which account is it?`), pick, add);
+      add.addEventListener('click', async () => {
+        add.disabled = true;
+        try { const r = await send(f, true, pick.value); row.replaceChildren(line(r)); setTimeout(onDone, 4000); }
+        catch (e) { row.append(h('p', { class: 'muted' }, e.message)); add.disabled = false; }
+      });
+      ask.append(row);
+    }
+    if (added && !unknown.length) setTimeout(onDone, 4000);
   });
-  return h('div', {}, btn, input, msg);
+  return h('div', {}, btn, input, msg, ask);
 }
 
 // A CSV from any bank: choose the account and the file, confirm which column is which (guessed, and remembered per
@@ -1472,8 +1490,8 @@ async function renderAccounts(params) {
   const csvAccounts = b.accounts.filter((a) => a.role !== 'card');
   const statementCard = h('section', { class: 'card' }, h('h2', {}, 'Add a statement'),
     h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' },
-      "Add a monthly statement (PDF) from your bank's app: BRD current accounts and credit cards, which banks often don't share, are read directly. For any other bank, import a CSV and say which column is which. Only payments the account does not have yet are added, and the file itself is not kept."),
-    statementPicker(() => refresh(), 'Add statements (PDF)'),
+      "Add statements from your bank: BRD PDFs (current accounts and credit cards, which banks often don't share), and CAMT.053 or OFX files from any bank. For anything else, import a CSV and say which column is which. Only payments the account does not have yet are added, and the file itself is not kept."),
+    statementPicker(() => refresh(), 'Add statements (PDF, CAMT, OFX)', csvAccounts),
     h('p', { style: 'margin:10px 0 0' }, h('button', { class: 'btn', disabled: !!state.offline || !csvAccounts.length,
       onclick: () => openCsvSheet(csvAccounts) }, 'Import a CSV (any bank)')));
 
@@ -1516,8 +1534,21 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
+  const yourData = h('section', { class: 'card' }, h('h2', {}, 'Your data'),
+    h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' }, 'Download everything to this device. The files include names and descriptions, so keep them private.'),
+    h('div', { class: 'chips' },
+      h('a', { class: 'btn', href: 'api/export.csv', download: '' }, 'Transactions (CSV)'),
+      h('a', { class: 'btn', href: 'api/export.json', download: '' }, 'Everything (JSON)')));
+  const nw = d.net_worth;
+  const netWorth = nw && nw.months.length > 1 ? h('section', { class: 'card' }, h('h2', {}, 'Net worth by month'),
+    scrollChart(nw.months.map((p) => ({ value: Math.max(0, p.net_worth_ron), partial: p.partial, month: p.month, short: monthShort(p.month)[0],
+      tip: `${monthLabel(p.month)}${p.partial ? ' (so far)' : ''}: ${ron(p.net_worth_ron)}${p.cards_ron ? ` · cards ${ron(p.cards_ron)}` : ''}` })),
+      { id: 'net-worth', label: 'Net worth by month', allAccent: true, fitPx: wide.matches ? wideCardPx(innerWidth >= 1200 ? 2 : 3) : null }),
+    h('p', { class: 'chart-note' }, `Your accounts minus what is owed on cards, at the end of each month; groups are not included. Worked back from today's balances, so it starts in ${monthLabel(nw.from)}, the first month every account's history fully covers.`),
+    tableToggle(nw.months.map((p) => [monthLabel(p.month) + (p.partial ? ' (so far)' : ''), nf0.format(p.net_worth_ron), p.cards_ron ? nf0.format(p.cards_ron) : '—']),
+      ['Month', 'Net worth', 'Cards'])) : '';
   // Wide: what you have | other people's money and cards | the connections and the app itself.
-  const columns = [[total, statementCard], [cardsCard, ...groupCards, newGroup], [banks, healthCard(d.health), alertsCard(), link]];
+  const columns = [[total, netWorth, statementCard], [cardsCard, ...groupCards, newGroup], [banks, healthCard(d.health), alertsCard(), yourData, link]];
   view.replaceChildren(...(wide.matches ? columns.map((c) => h('div', { class: 'col' }, ...c)) : columns.flat()));
 }
 

@@ -34,8 +34,9 @@ country, and bank transaction types. Keep personal places (your bakery, your lan
 
 ## Adding a statement reader
 
-Most banks need no reader: **Accounts → Add a statement → Import a CSV** works for any bank by choosing
-which column is which, with no code. Write a reader when a bank's statements are only available as PDF, or
+Most banks need no reader: CAMT.053 and OFX files are read as they are (`statements/iso.py`), and
+**Accounts → Add a statement → Import a CSV** works for any bank by choosing which column is which, with
+no code. Write a reader when a bank's statements are only available as PDF, or
 for something its API leaves out, such as a credit card (BRD is the example: `src/bankhub/statements/brd.py`).
 
 A reader is a module in `src/bankhub/statements/` that registers itself and is imported in `__init__.py`:
@@ -51,6 +52,7 @@ register(Reader(id="mybank-account", bank="MyBank", kind="account",        # or 
 reader follows:
 
 1. **Detect narrowly.** `detect` looks at the text only, and no other reader may claim the same statement.
+   XML readers refuse a DOCTYPE.
 2. **Return the common types.** ISO dates, integer minor units, and the sign convention: on an account
    statement money out is negative; on a card statement a charge is positive.
 3. **Check the lines against the statement.** Add up what you read and compare it with the statement's own
@@ -72,7 +74,7 @@ from reader_conformance import check_reader
 check_reader("mybank-account", sample_text, text_with_one_amount_changed)
 ```
 
-That verifies rules 1 to 4. Add tests for what is particular to the bank (a page break in the middle of a
+That verifies rules 1 to 4 (pass `None` as the broken text only for a format with no totals at all, like OFX). Add tests for what is particular to the bank (a page break in the middle of a
 payment, columns that shift, a payroll line that names the holder). Describe the reader in `docs/BANKS.md`.
 
 ## Pull requests

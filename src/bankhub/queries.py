@@ -241,3 +241,72 @@ def recurring_payments(conn: sqlite3.Connection, *, include_missed: bool = True,
             "note": "change compares the latest charge with the previous one: month-over-month (MoM) for monthly "
                     "bills, year-over-year (YoY) for annual ones; totals_by_month is by calendar month; "
                     "unrecognised payees are labelled by type, never by name"}
+
+
+def _continuous_from(counts: dict[str, int], first: str, last: str) -> str | None:
+    """The first month from which an account's history has no gap. An account that usually has several
+    payments a month and then has none for a month is missing that month (a sync or statement not fetched
+    yet), and nothing before its first payment is known. A quiet account's empty months are real, before its
+    first payment too, so it limits nothing (None)."""
+    months, m = [], first
+    while m <= last:
+        months.append(m)
+        y, mo = int(m[:4]), int(m[5:7])
+        m = f"{y + mo // 12}-{mo % 12 + 1:02d}"
+    busy = sorted(counts.get(x, 0) for x in months)
+    if not busy or busy[len(busy) // 2] < 5:
+        return None
+    empty = [x for x in months if counts.get(x, 0) == 0 and x != last]
+    if not empty:
+        return first
+    nxt = empty[-1]
+    y, mo = int(nxt[:4]), int(nxt[5:7])
+    return f"{y + mo // 12}-{mo % 12 + 1:02d}"
+
+
+def net_worth_history(conn: sqlite3.Connection, *, months: int = 24, today: date | None = None) -> dict:
+    """Total of your accounts minus what is owed on cards, at the end of each month, in RON.
+
+    Balances are only fetched from now on, so earlier months are worked back from the latest balance and
+    the booked transactions since. That is only right while an account's history has no gaps, so the series
+    starts where every account's history is complete. Accounts in a group (someone else's money) are left out;
+    a card counts from its first statement."""
+    today = today or date.today()
+    rates = RateTable(conn)
+    end_month = today.strftime("%Y-%m")
+    span = _months_back(today, months)
+    ends = {m: min(month_bounds(m)[1], today.isoformat()) for m in span}
+    series = {m: 0.0 for m in span}
+    cards_by_month = {m: 0.0 for m in span}
+    start = span[0]
+    for acc in conn.execute("SELECT a.id, a.alias, a.currency, a.source FROM accounts a"
+                            " WHERE a.active = 1 AND a.group_id IS NULL"):
+        snaps = conn.execute("SELECT fetched_at, amount_minor, currency FROM balance_snapshots WHERE account_id = ?"
+                             " ORDER BY fetched_at, id", (acc["id"],)).fetchall()
+        if not snaps:
+            continue
+        if acc["source"] == "statement":
+            first_card = snaps[0]["fetched_at"][:7]
+            for m in span:
+                known = [s for s in snaps if s["fetched_at"][:10] <= ends[m]]
+                if m >= first_card and known:
+                    value = rates.to_ron(known[-1]["amount_minor"] / 100, known[-1]["currency"], ends[m]) or 0.0
+                    series[m] += value
+                    cards_by_month[m] += value
+            continue
+        latest = snaps[-1]
+        rows = conn.execute("SELECT booking_date, amount FROM transactions_clean WHERE account_alias = ? AND status = 'booked'",
+                            (acc["alias"],)).fetchall()
+        if rows:
+            counts: dict[str, int] = {}
+            for r in rows:
+                counts[r["booking_date"][:7]] = counts.get(r["booking_date"][:7], 0) + 1
+            start = max(start, _continuous_from(counts, min(counts), end_month) or start)
+        snap_day = latest["fetched_at"][:10]
+        for m in span:
+            later = sum(r["amount"] for r in rows if ends[m] < r["booking_date"] <= snap_day)
+            value = latest["amount_minor"] / 100 - later
+            series[m] += rates.to_ron(value, latest["currency"], ends[m]) or 0.0
+    points = [{"month": m, "net_worth_ron": round(series[m], 2), "cards_ron": round(cards_by_month[m], 2),
+               "partial": m == end_month} for m in span if m >= start]
+    return {"months": points, "from": points[0]["month"] if points else None, "fx_basis": "BNR official rate"}

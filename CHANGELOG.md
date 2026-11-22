@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Accounts and Settings are apart. Accounts shows what you have: balances, net worth, credit cards and the
+  groups' balances, with one line saying whether every bank is up to date. Settings (⚙ on Accounts, or the
+  last item in the laptop sidebar) has the banks with their health, Sync now and linking, adding statements
+  and CSVs, groups, your categories, notifications with the weekly summary, export and the app version.
+- When something needs a look (a bank that has not synced for two days, backups that stopped, a card
+  statement over 40 days old), Month shows a banner that opens Settings.
+- Coming back from linking a bank, and the alerts about consents, syncing and backups, open Settings.
+- A chart tooltip no longer stays on screen after moving to another tab.
+- The demo shows its made-up banks as synced.
 - Weekly summary: a notification once a week (Monday 08:00 by default; choose the day and hour under
   Notifications) and a card at the top of Month. Last week's day-to-day spending against your usual week,
   with regular payments shown apart; the month so far against the same days of last month; categories well

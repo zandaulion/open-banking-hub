@@ -362,7 +362,7 @@ function fail(err) {
     h('button', { class: 'btn', onclick: () => refresh() }, 'Try again')));
 }
 
-const routes = { month: renderMonth, recurring: renderRecurring, tx: renderTransactions, inbox: renderInbox, rules: renderRules, accounts: renderAccounts };
+const routes = { month: renderMonth, recurring: renderRecurring, tx: renderTransactions, inbox: renderInbox, rules: renderRules, accounts: renderAccounts, settings: renderSettings };
 const TAB_OF = { rules: 'inbox' };
 async function route() {
   hideTip();
@@ -378,11 +378,14 @@ async function route() {
   if (name === 'invite' || params.has('invite') || location.hash.includes('invite=')) return renderActivate();
   const fn = routes[name] || renderMonth;
   for (const a of tabbar.querySelectorAll('a')) {
-    if (a.dataset.tab === (TAB_OF[name] || name)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    // On a phone Settings sits under Accounts; on a wide screen it has its own place in the sidebar.
+    const tab = name === 'settings' && !wide.matches ? 'accounts' : (TAB_OF[name] || name);
+    if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
   state.panel = false;
   view.dataset.layout = fn === renderMonth ? 'month' : name;
   try { await fn(params); tabbar.hidden = false; slideIn(); } catch (e) { fail(e); }
+  hideTip();   // a chart tooltip from the screen being left must not stay over the new one
   if (!state.usedOffline) {
     showOnline();
     if (name !== 'month') setTimeout(() => fillOfflineCopy(null).catch(() => {}), 1000);
@@ -650,6 +653,12 @@ async function renderMonth(params) {
       if (params.get('week') || age < 4) weekCard = weekSummaryCard(w.summary);
     } catch { /* offline without a copy: no card */ }
   }
+  // Something that needs a look (a bank not syncing, backups, an old card statement): a banner at the top.
+  api('status').then((r) => {
+    if (!r.problems.length || parseHash().name !== 'month' || view.querySelector('.problem-banner')) return;
+    view.prepend(h('button', { class: 'notice warn problem-banner', onclick: () => go('settings') },
+      `⚠ ${r.problems[0]}${r.problems.length > 1 ? ` (and ${r.problems.length - 1} more)` : ''} · Settings`));
+  }).catch(() => {});
   view.replaceChildren(weekCard, hero, oneOffs, trend, cats, people, payees,
     h('p', { class: 'faint center-text m-foot' }, `Booked transactions only · newest ${d.newest_transaction || '—'}`));
 }
@@ -1487,21 +1496,18 @@ function openCardSheet(c) {
     } }, 'See its payments'), h('button', { class: 'btn', onclick: () => sheet.close() }, 'Close')));
 }
 
-async function renderAccounts(params) {
-  setTitle('Accounts');
+async function renderAccounts() {
+  setTitle('Accounts', h('button', { class: 'chip icon', 'aria-label': 'Settings', onclick: () => go('settings') }, '⚙'));
   const d = await api('accounts');
   state.oneOffRon = d.one_off_ron;
-  const b = d.balances, st = d.status;
-  const ls = d.link_status;
-  const linkMsg = params.get('link') === 'importing' || (ls && ls.state === 'importing') ? (
-      !ls || ls.state === 'importing' ? `Importing ${ls ? ls.bank : 'the bank'}… ${ls && ls.transactions ? `${ls.transactions} transactions so far` : 'this can take a minute'}`
-      : ls.state === 'ok' ? `${ls.bank} linked: ${ls.accounts} account${ls.accounts === 1 ? '' : 's'}, ${ls.transactions} transactions imported.`
-      : ls.state === 'no-accounts' ? 'The bank returned no accounts. Link them in the Enable Banking Control Panel first, then try again.'
-      : `The import failed: ${ls.error || 'unknown error'}`)
-    : { cancelled: 'Linking was cancelled.', invalid: 'That link has expired. Start again.' }[params.get('link')];
-  if (ls && ls.state === 'importing') setTimeout(() => { if (parseHash().name === 'accounts') refresh(); }, 3000);
+  const b = d.balances;
+  // One line on how fresh the money is; anything wrong leads to Settings.
+  const newest = d.health.accounts.map((a) => a.last_ok).filter(Boolean).sort().pop();
+  const statusLine = d.problems.length
+    ? h('button', { class: 'notice status-line warn', onclick: () => go('settings') }, `⚠ ${d.problems[0]}${d.problems.length > 1 ? ` (and ${d.problems.length - 1} more)` : ''} · Settings`)
+    : h('p', { class: 'faint status-line', style: 'margin:0 0 10px;font-size:13px' }, newest ? `✓ All banks synced · last ${ago(newest)}` : '');
   const total = h('section', { class: 'card' },
-    linkMsg ? h('div', { class: 'notice' }, linkMsg) : '',
+    statusLine,
     h('p', { class: 'eyebrow' }, 'All accounts'),
     h('div', { class: 'hero num' }, nf0.format(b.total_ron), h('small', {}, 'RON')),
     b.total_eur ? h('div', { class: 'delta' }, `≈ ${nf0.format(b.total_eur)} EUR at the BNR rate`) : '',
@@ -1522,7 +1528,6 @@ async function renderAccounts(params) {
           h('div', { class: 'row-head' }, h('span', { class: 'name' }, a.name), h('span', { class: 'amt num' }, money(a.amount, a.currency))),
           h('div', { class: 'row-sub' }, h('span', {}, `${a.institution} · ${a.alias}`)))))) : h('p', { class: 'muted' }, 'No accounts yet.'));
   });
-  const newGroup = h('p', { class: 'center-text' }, h('button', { class: 'btn', onclick: () => openGroupSheet(null) }, 'New group'));
   const cardsCard = d.cards.length ? h('section', { class: 'card' }, h('h2', {}, 'Credit cards'),
     h('ul', { class: 'rows' }, d.cards.map((c) => h('li', {},
       h('button', { class: 'rowbtn', onclick: () => openCardSheet(c) },
@@ -1531,14 +1536,34 @@ async function renderAccounts(params) {
         h('div', { class: 'row-sub' }, h('span', {}, c.due_date ? `Due ${dayLabel(c.due_date)}${c.min_due_ron ? ` · min ${ron(c.min_due_ron)}` : ''}` : `Up to ${dayLabel(c.period_end)}`),
           h('span', {}, c.limit_ron ? `${ron(c.available_ron)} available` : '')))))),
     h('p', { class: 'faint', style: 'margin:8px 0 0;font-size:13px' }, 'Owed on a card is not part of your total above.')) : '';
-  const csvAccounts = b.accounts.filter((a) => a.role !== 'card');
-  const statementCard = h('section', { class: 'card' }, h('h2', {}, 'Add a statement'),
-    h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' },
-      "Add statements from your bank: BRD PDFs (current accounts and credit cards, which banks often don't share), and CAMT.053 or OFX files from any bank. For anything else, import a CSV and say which column is which. Only payments the account does not have yet are added, and the file itself is not kept."),
-    statementPicker(() => refresh(), 'Add statements (PDF, CAMT, OFX)', csvAccounts),
-    h('p', { style: 'margin:10px 0 0' }, h('button', { class: 'btn', disabled: !!state.offline || !csvAccounts.length,
-      onclick: () => openCsvSheet(csvAccounts) }, 'Import a CSV (any bank)')));
+  const nw = d.net_worth;
+  const netWorth = nw && nw.months.length > 1 ? h('section', { class: 'card' }, h('h2', {}, 'Net worth by month'),
+    scrollChart(nw.months.map((p) => ({ value: Math.max(0, p.net_worth_ron), partial: p.partial, month: p.month, short: monthShort(p.month)[0],
+      tip: `${monthLabel(p.month)}${p.partial ? ' (so far)' : ''}: ${ron(p.net_worth_ron)}${p.cards_ron ? ` · cards ${ron(p.cards_ron)}` : ''}` })),
+      { id: 'net-worth', label: 'Net worth by month', allAccent: true, fitPx: wide.matches ? wideCardPx(3) : null }),
+    h('p', { class: 'chart-note' }, `Your accounts minus what is owed on cards, at the end of each month; groups are not included. Worked back from today's balances, so it starts in ${monthLabel(nw.from)}, the first month every account's history fully covers.`),
+    tableToggle(nw.months.map((p) => [monthLabel(p.month) + (p.partial ? ' (so far)' : ''), nf0.format(p.net_worth_ron), p.cards_ron ? nf0.format(p.cards_ron) : '—']),
+      ['Month', 'Net worth', 'Cards'])) : '';
+  // Wide: your own money | cards and other people's money.
+  const columns = [[total, netWorth], [cardsCard, ...groupCards]];
+  view.replaceChildren(...(wide.matches ? columns.map((c) => h('div', { class: 'col' }, ...c)) : columns.flat()));
+}
 
+// ---------------------------------------------------------------- settings
+// Everything that is set up once or used now and then: banks, adding data, groups, categories, notifications,
+// exporting, and the app itself.
+async function renderSettings(params) {
+  setTitle('Settings');
+  const d = await api('accounts');
+  const b = d.balances, st = d.status;
+  const ls = d.link_status;
+  const linkMsg = params.get('link') === 'importing' || (ls && ls.state === 'importing') ? (
+      !ls || ls.state === 'importing' ? `Importing ${ls ? ls.bank : 'the bank'}… ${ls && ls.transactions ? `${ls.transactions} transactions so far` : 'this can take a minute'}`
+      : ls.state === 'ok' ? `${ls.bank} linked: ${ls.accounts} account${ls.accounts === 1 ? '' : 's'}, ${ls.transactions} transactions imported.`
+      : ls.state === 'no-accounts' ? 'The bank returned no accounts. Link them in the Enable Banking Control Panel first, then try again.'
+      : `The import failed: ${ls.error || 'unknown error'}`)
+    : { cancelled: 'Linking was cancelled.', invalid: 'That link has expired. Start again.' }[params.get('link')];
+  if (ls && ls.state === 'importing') setTimeout(() => { if (parseHash().name === 'settings') refresh(); }, 3000);
   const syncBtn = h('button', { class: 'btn', disabled: !!state.offline }, state.offline ? 'Sync needs the server' : 'Sync now');
   const syncMsg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
   syncBtn.addEventListener('click', async () => {
@@ -1551,7 +1576,9 @@ async function renderAccounts(params) {
     } catch (e) { syncMsg.textContent = e.message; }
     syncBtn.disabled = false;
   });
-  const banks = h('section', { class: 'card' }, h('h2', {}, 'Bank connections'),
+  const banks = h('section', { class: 'card' }, h('h2', {}, 'Banks'),
+    linkMsg ? h('div', { class: 'notice' }, linkMsg) : '',
+    d.problems.map((p) => h('div', { class: 'notice warn' }, `⚠ ${p}`)),
     h('ul', { class: 'rows' }, st.banks.map((x) => h('li', {},
       h('div', { class: 'row-head' }, h('span', { class: 'name' }, x.institution),
         h('span', {}, x.renew_soon ? h('span', { class: 'badge warn' }, `⚠ ${x.consent_days_left} days left`) : h('span', { class: 'badge' }, `${x.consent_days_left} days left`))),
@@ -1578,21 +1605,34 @@ async function renderAccounts(params) {
     link.append(h('p', { class: 'muted', style: 'margin-top:0' }, 'Linking from the app needs this return address registered in the Enable Banking Control Panel:'),
       h('p', { class: 'num', style: 'word-break:break-all' }, d.callback_url));
   }
+  const csvAccounts = b.accounts.filter((a) => a.role !== 'card');
+  const statementCard = h('section', { class: 'card' }, h('h2', {}, 'Add data'),
+    h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' },
+      "Add statements from your bank: BRD PDFs (current accounts and credit cards, which banks often don't share), and CAMT.053 or OFX files from any bank. For anything else, import a CSV and say which column is which. Only payments the account does not have yet are added, and the file itself is not kept."),
+    statementPicker(() => refresh(), 'Add statements (PDF, CAMT, OFX)', csvAccounts),
+    h('p', { style: 'margin:10px 0 0' }, h('button', { class: 'btn', disabled: !!state.offline || !csvAccounts.length,
+      onclick: () => openCsvSheet(csvAccounts) }, 'Import a CSV (any bank)')));
+
+  const groupsCard = h('section', { class: 'card' }, h('h2', {}, 'Groups'),
+    h('p', { class: 'faint', style: 'margin:-4px 0 8px;font-size:13px' }, "Someone else's money: a child's or a parent's accounts, a business, a person you send money to. Their balances are on Accounts."),
+    d.groups.length ? h('ul', { class: 'rows' }, d.groups.map((g) => h('li', {},
+      h('button', { class: 'rowbtn', onclick: () => openGroupSheet(g) },
+        h('div', { class: 'row-head' }, h('span', { class: 'name' }, g.name), h('span', { class: 'faint' }, 'Edit ›')),
+        h('div', { class: 'row-sub' }, h('span', {}, `${BEHAVIOUR[g.behaviour]} · ${groupSummary(g)}`)))))) : '',
+    h('p', { style: 'margin:10px 0 0' }, h('button', { class: 'btn', onclick: () => openGroupSheet(null) }, 'New group')));
+  const categories = h('section', { class: 'card' }, h('h2', {}, 'Categories'),
+    h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' }, 'Your own rules are checked before the built-in ones. Change one, and everything is sorted again.'),
+    h('div', { class: 'chips' }, h('button', { class: 'btn', onclick: () => go('rules') }, 'My rules'),
+      h('button', { class: 'btn', onclick: () => go('inbox') }, 'Payees to sort')));
   const yourData = h('section', { class: 'card' }, h('h2', {}, 'Your data'),
     h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' }, 'Download everything to this device. The files include names and descriptions, so keep them private.'),
     h('div', { class: 'chips' },
       h('a', { class: 'btn', href: 'api/export.csv', download: '' }, 'Transactions (CSV)'),
       h('a', { class: 'btn', href: 'api/export.json', download: '' }, 'Everything (JSON)')));
-  const nw = d.net_worth;
-  const netWorth = nw && nw.months.length > 1 ? h('section', { class: 'card' }, h('h2', {}, 'Net worth by month'),
-    scrollChart(nw.months.map((p) => ({ value: Math.max(0, p.net_worth_ron), partial: p.partial, month: p.month, short: monthShort(p.month)[0],
-      tip: `${monthLabel(p.month)}${p.partial ? ' (so far)' : ''}: ${ron(p.net_worth_ron)}${p.cards_ron ? ` · cards ${ron(p.cards_ron)}` : ''}` })),
-      { id: 'net-worth', label: 'Net worth by month', allAccent: true, fitPx: wide.matches ? wideCardPx(innerWidth >= 1200 ? 2 : 3) : null }),
-    h('p', { class: 'chart-note' }, `Your accounts minus what is owed on cards, at the end of each month; groups are not included. Worked back from today's balances, so it starts in ${monthLabel(nw.from)}, the first month every account's history fully covers.`),
-    tableToggle(nw.months.map((p) => [monthLabel(p.month) + (p.partial ? ' (so far)' : ''), nf0.format(p.net_worth_ron), p.cards_ron ? nf0.format(p.cards_ron) : '—']),
-      ['Month', 'Net worth', 'Cards'])) : '';
-  // Wide: what you have | other people's money and cards | the connections and the app itself.
-  const columns = [[total, netWorth, statementCard], [cardsCard, ...groupCards, newGroup], [banks, healthCard(d.health), alertsCard(), yourData, link]];
+  const about = h('section', { class: 'card' }, h('h2', {}, 'About'),
+    h('p', { class: 'muted', style: 'margin:0' }, `Bank Hub ${d.version}. Updates install themselves the next time the app is opened.`),
+    h('p', { class: 'faint', style: 'margin:6px 0 0;font-size:13px' }, 'Read-only: it can see your accounts, never move money.'));
+  const columns = [[banks, healthCard(d.health), link], [statementCard, groupsCard, categories], [alertsCard(), yourData, about]];
   view.replaceChildren(...(wide.matches ? columns.map((c) => h('div', { class: 'col' }, ...c)) : columns.flat()));
 }
 

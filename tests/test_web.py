@@ -358,3 +358,20 @@ def test_week_summary_and_its_settings_through_the_api(cfg):
     assert set(w["summary"]) >= {"start", "end", "spent_ron", "usual_ron", "worth_a_look", "coming_up", "month"}
     st = app.post("/api/alerts/settings", json={"weekly_day": 4, "weekly_hour": 18, "card_due": False}, headers=H).json()
     assert (st["weekly_day"], st["weekly_hour"], st["card_due"]) == (4, 18, False)
+
+
+def test_problems_name_a_silent_bank_old_backups_and_an_old_card_statement(cfg):
+    from datetime import datetime, timezone
+    from bankhub.web.data import problems
+    now = datetime(2026, 11, 22, 12, tzinfo=timezone.utc)
+    h = {"accounts": [{"institution": "BRD", "last_ok": "2026-11-19T06:00:00+00:00"},
+                      {"institution": "BRD", "last_ok": "2026-11-18T06:00:00+00:00"},
+                      {"institution": "ING", "last_ok": "2026-11-22T06:00:00+00:00"}],
+         "backup_local": "2026-11-17T03:00:00+00:00",
+         "statements": [{"name": "Card", "period_end": "2026-09-25"}, {"name": "Other card", "period_end": "2026-10-25"}]}
+    assert problems(h, now) == ["BRD has not synced since 2026-11-19", "The last backup is from 2026-11-17",
+                                "Card: the latest statement ended 2026-09-25"]
+    app = _device(cfg)
+    assert isinstance(app.get("/api/status").json()["problems"], list)
+    d = app.get("/api/accounts").json()
+    assert d["version"] and "problems" in d

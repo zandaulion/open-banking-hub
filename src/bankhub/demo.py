@@ -155,6 +155,14 @@ def load(conn, months: int = 14) -> int:
         conn.execute("UPDATE accounts SET group_id=? WHERE uid='demo-kid'", (group,))
     for st in cards:
         total += statements.store_statement(conn, st)["new"]
+    # A sync just now, so Health and the status line show the made-up banks as up to date.
+    with transaction(conn):
+        run = conn.execute("INSERT INTO sync_runs(started_at, finished_at, kind, status) VALUES (?,?,'incremental','ok')",
+                           (now, now)).lastrowid
+        banks = [r[0] for r in conn.execute("SELECT id FROM accounts WHERE source = 'bank'")]
+        conn.executemany("INSERT INTO sync_results(run_id, account_id, at, fetched, new, skipped) VALUES (?,?,?,0,0,NULL)",
+                         [(run, a, now) for a in banks])
+        conn.executemany("INSERT INTO api_requests(ts, account_id, kind) VALUES (?,?,'transactions')", [(now, a) for a in banks])
     return total
 
 

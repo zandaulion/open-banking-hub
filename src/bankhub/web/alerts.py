@@ -201,7 +201,7 @@ class Alerts:
 
     def test(self, device_id: int) -> int:
         return self._send_all({"title": "Bank Hub", "body": "Notifications work. You'll hear from me when something "
-                               "needs a look.", "url": "./#accounts", "tag": "bankhub-test"}, only_device=device_id)
+                               "needs a look.", "url": "./#settings", "tag": "bankhub-test"}, only_device=device_id)
 
     def weekly(self, bank_conn: sqlite3.Connection, now: datetime | None = None, send: bool = True) -> dict | None:
         """Sends the weekly summary once, at the day and hour in the settings (local time). A summary missed by
@@ -305,7 +305,7 @@ def evaluate(conn: sqlite3.Connection, s: dict, data_dir: Path, today: date) -> 
                                  f"Renew {r['institution']}",
                                  f"Access to {r['institution']} ends in {max(days, 0)} days. "
                                  "Renew it from Accounts.",
-                                 f"A bank connection ends in {max(days, 0)} days.", "./#accounts"))
+                                 f"A bank connection ends in {max(days, 0)} days.", "./#settings"))
 
     if s["card_due"]:
         for r in conn.execute(
@@ -339,12 +339,12 @@ def evaluate(conn: sqlite3.Connection, s: dict, data_dir: Path, today: date) -> 
             if r["last_ok"] and r["last_ok"] < cutoff:
                 out.append(Alert(f"stale:{r['institution']}:{today.isoformat()}", f"{r['institution']} is not syncing",
                                  f"No successful sync from {r['institution']} for over two days.",
-                                 "A bank has not synced for over two days.", "./#accounts"))
+                                 "A bank has not synced for over two days.", "./#settings"))
         backups = data_dir / "backups"
         snaps = sorted(p.name for p in backups.iterdir() if p.is_dir() and len(p.name) == 16) \
             if backups.exists() else []
         if snaps and snaps[-1] < (datetime.now(timezone.utc) - timedelta(hours=48)).strftime("%Y%m%dT%H%M%SZ"):
             out.append(Alert(f"backup:{today.isoformat()}", "Backups stopped",
                              "The last local backup is more than two days old.",
-                             "The last local backup is more than two days old.", "./#accounts"))
+                             "The last local backup is more than two days old.", "./#settings"))
     return out

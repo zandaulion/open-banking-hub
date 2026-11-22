@@ -179,6 +179,10 @@ label.field input, label.field select {
 .sheet .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .toggle { display: flex; gap: 8px; align-items: center; margin: 10px 0; font-size: 14px; }
 .notice { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 14px; margin-bottom: 12px; }
+.notice.warn { background: color-mix(in srgb, var(--up) 14%, var(--surface-1)); color: var(--text-primary); }
+button.notice { display: block; width: 100%; text-align: left; border: 0; font: inherit; cursor: pointer; }
+.problem-banner { margin: 0 0 12px; }
+.only-wide { display: none !important; }
 
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
@@ -283,9 +287,15 @@ main#view { touch-action: pan-y; will-change: transform; }
   .r-list .series .spark { grid-column: 4; grid-row: 1; margin: 0; }
   .r-list .series .amt { grid-column: 5; grid-row: 1; text-align: right; }
 
-  /* Accounts: three columns of their own, each a stack of cards. */
-  main#view[data-layout="accounts"] { column-count: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
-  main#view[data-layout="accounts"] .col > .card { margin: 0 0 14px; }
+  .only-wide { display: flex !important; }
+  .tabbar a.only-wide { margin-top: auto; margin-bottom: 16px; }
+
+  /* Accounts: your own money | cards and other people's money. Settings: three columns of cards. */
+  main#view[data-layout="accounts"], main#view[data-layout="settings"] { column-count: auto; display: grid; gap: 14px; align-items: start; }
+  main#view[data-layout="accounts"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  main#view[data-layout="settings"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  main#view[data-layout="accounts"] .col > .card, main#view[data-layout="settings"] .col > .card { margin: 0 0 14px; }
+  main#view[data-layout="month"] > .problem-banner { grid-column: 1 / -1; order: -1; margin: 0; }
 
   /* Sort: one list; a payee opens beside it. */
   main#view[data-layout="inbox"] { column-count: auto; }
@@ -294,7 +304,7 @@ main#view { touch-action: pan-y; will-change: transform; }
 @media (min-width: 900px) and (max-width: 1199px) {
   .m-hero, .m-trend, .m-cats, .m-payees, .m-oneoffs, .m-groups, .r-summary, .r-chart { grid-column: span 3; }
   .r-list, .r-income { grid-column: 1 / -1; }
-  main#view[data-layout="accounts"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  main#view[data-layout="settings"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1500px) {
   main { max-width: 1440px; }

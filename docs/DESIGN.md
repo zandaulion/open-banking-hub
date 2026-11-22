@@ -161,6 +161,10 @@ and its own `web.db` for invitations and devices.
   cached.
 - **Bank linking:** `/callback` accepts only a state that this device started in the last hour.
 - **Import:** runs in the background, so the phone is not left waiting.
+- **Screens:** Accounts shows what you have (balances, net worth, cards, groups); Settings holds what is set up
+  once or used now and then (banks and health, adding data, groups, categories, notifications, export).
+  `/api/status` lists what needs a look (a bank silent for two days, stopped backups, a card statement over 40
+  days old) for the line on Accounts and the banner on Month.
 - **Layouts:** one set of screens. Below 900 px it is the phone layout (bottom tabs, sheets). From 900 px a
   sidebar, cards in columns and per-screen grids (`main#view[data-layout]` in `style.css`); lists open their
   details in a side panel instead of a sheet. Charts are drawn to the width of their card (`fitPx`), so

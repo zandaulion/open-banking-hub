@@ -86,6 +86,13 @@ def load_web_config(core: Config | None = None) -> WebConfig:
                      bind=env.get("BANKHUB_BIND", "127.0.0.1"))
 
 
+try:
+    from importlib.metadata import version as _pkg_version
+    APP_VERSION = _pkg_version("bankhub")
+except Exception:                     # running from a checkout that was never installed
+    APP_VERSION = "dev"
+
+
 def _build_version() -> str:
     h = hashlib.sha256()
     for p in sorted(STATIC.rglob("*")):
@@ -310,9 +317,17 @@ def create_app(cfg: WebConfig) -> FastAPI:
         result["link_status"] = dict(link_status) or None
         with ro() as conn:
             result["health"] = data.health(conn, cfg.core.data_dir)
+        result["problems"] = data.problems(result["health"])
+        result["version"] = APP_VERSION
         result["one_off_ron"] = cfg.core.one_off_ron
         result["callback_url"] = cfg.callback_url
         return result
+
+    @app.get("/api/status")
+    def status(dev: dict = Depends(device)):
+        """What needs a look (a bank not syncing, backups, an old card statement), for the banner on Month."""
+        with ro() as conn:
+            return {"problems": data.problems(data.health(conn, cfg.core.data_dir))}
 
     @app.get("/api/alerts")
     def alerts_status(dev: dict = Depends(device)):
@@ -664,7 +679,7 @@ def create_app(cfg: WebConfig) -> FastAPI:
 
     @app.get("/callback")
     def callback(request: Request, state: str = "", code: str = "", error: str = ""):
-        back = cfg.base_url + "/#accounts"
+        back = cfg.base_url + "/#settings"
         dev = auth.device_for_token(request.cookies.get(COOKIE))
         pending = auth.take_pending_link(state) if state else None
         if not dev or not pending or pending["device_id"] != dev["id"]:

@@ -410,6 +410,27 @@ def category_choices(conn: sqlite3.Connection, rules_text: str) -> list[str]:
     return sorted(cats - {"uncategorized", "transfers", "income"})
 
 
+def problems(h: dict, now: datetime | None = None) -> list[str]:
+    """What needs a look, from `health()`: a bank silent for two days, backups that stopped, a card statement
+    over 40 days old. Shown on Accounts and as a banner on Month."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=48)).isoformat()
+    out = []
+    stale: dict[str, list[str | None]] = {}
+    for a in h["accounts"]:
+        if not a["last_ok"] or a["last_ok"] < cutoff:
+            stale.setdefault(a["institution"], []).append(a["last_ok"])
+    for bank, seen in stale.items():
+        known = [x for x in seen if x]
+        out.append(f"{bank} has not synced since {max(known)[:10]}" if known else f"{bank} has never synced")
+    if h.get("backup_local") and h["backup_local"] < cutoff:
+        out.append(f"The last backup is from {h['backup_local'][:10]}")
+    for st in h.get("statements", []):
+        if st["period_end"] < (now - timedelta(days=40)).date().isoformat():
+            out.append(f"{st['name']}: the latest statement ended {st['period_end']}")
+    return out
+
+
 def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
     """Is each bank connection alive, how far back is history, and when did backups last run."""
     from ..sync import BACKFILL_DAYS, WINDOWED, backfill_done

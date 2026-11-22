@@ -35,12 +35,12 @@ with bank-specific quirks described in [docs/BANKS.md](docs/BANKS.md).
   <tr>
     <td align="center"><img src="docs/screenshots/payment-light.png" alt="A payment: change its category for this payment or the payee, or mark it as a one-off" width="250"><br><strong>A payment</strong></td>
     <td align="center"><img src="docs/screenshots/sort-light.png" alt="Sort: unrecognised payees, biggest first" width="250"><br><strong>Sort</strong></td>
-    <td align="center"><img src="docs/screenshots/accounts-light.png" alt="Accounts: balances, a credit card from its statements, a child's account in a group" width="250"><br><strong>Accounts</strong></td>
+    <td align="center"><img src="docs/screenshots/accounts-light.png" alt="Accounts: balances, net worth, a credit card from its statements, a child's account in a group" width="250"><br><strong>Accounts</strong></td>
   </tr>
   <tr>
     <td align="center"><img src="docs/screenshots/card-light.png" alt="A credit card added from its statements: owed, limit, due date and instalment plans" width="250"><br><strong>Credit card</strong></td>
     <td align="center"><img src="docs/screenshots/csv-light.png" alt="Importing a CSV from any bank: the columns are guessed and confirmed once" width="250"><br><strong>CSV import</strong></td>
-    <td></td>
+    <td align="center"><img src="docs/screenshots/settings-light.png" alt="Settings: banks and their health, adding data, groups, categories, notifications, export" width="250"><br><strong>Settings</strong></td>
   </tr>
 </table>
 
@@ -174,14 +174,16 @@ From the terminal instead: `uv run bankhub auth start <bank>`, then
 - **Activity**: every transaction; search by name or by amount (`38.68`, `>500`, `100-200`).
   Tap one to change its category, for that payment or for every payment to that payee, or to mark
   it as a one-off.
-- **Accounts**: balances, bank connections, a **health** check (is each bank syncing, how far back
-  history goes, when backups last ran) and **notifications** for this phone: a large payment, a low
-  balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that
-  stopped. By default notifications say what happened, without amounts or payees on the lock screen.
-  A **weekly summary** (Monday 08:00 by default, any day and hour you choose) compares last week's
-  day-to-day spending with your usual week, and lists what changed, what is worth a look and what is due.
-- **Net worth**: your accounts minus what is owed on cards, month by month, worked back from today's balances.
-- **Your data**: download every transaction as CSV, or everything (accounts, groups, cards, rules) as JSON.
+- **Accounts**: what you have: balances, net worth by month, credit cards and the groups' balances, with
+  one line saying whether every bank is up to date. Tap an account to rename it or put it in a group.
+- **Settings** (⚙ on Accounts, or the sidebar on a laptop): banks, their health and Sync now; adding
+  statements and CSVs; groups; your categories; **notifications** for this phone (a large payment, a low
+  balance, a late salary, a changed regular payment, a consent about to end, a sync or backup that stopped,
+  a card payment due) and the weekly summary; exporting your data. By default notifications say what
+  happened, without amounts or payees on the lock screen. When something needs a look, Month shows a
+  banner that leads here.
+- **Your data** (Settings): download every transaction as CSV, or everything (accounts, groups, cards,
+  rules) as JSON.
 - **Groups**: someone else's money (a child's or a parent's accounts, a business, a person you send money
   to) goes in a group. Its own payments are shown but not counted, and what you send it counts the way you
   choose: spending in its own category, or a transfer.

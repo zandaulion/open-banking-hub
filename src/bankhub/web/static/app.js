@@ -263,7 +263,13 @@ function scrollChart(points, { id, visible = 14, height = 150, onTap, label = 'C
     pin.textContent = points[k]?.month?.slice(0, 4) || '';
   };
   box.addEventListener('scroll', () => { state.scroll[id] = box.scrollLeft; hideTip(); updatePin(); }, { passive: true });
-  requestAnimationFrame(() => {
+  // Position it once it is on the page: a screen may still be waiting for other data when the chart is built,
+  // and a chart not yet shown has no width, which would leave it at the oldest months.
+  const place = (tries = 0) => {
+    if (!box.isConnected || !box.clientWidth) {
+      if (tries < 300) requestAnimationFrame(() => place(tries + 1));
+      return;
+    }
     box.scrollLeft = state.scroll[id] ?? box.scrollWidth;
     const sel = points.findIndex((p) => p.on);
     if (sel >= 0) {
@@ -273,7 +279,8 @@ function scrollChart(points, { id, visible = 14, height = 150, onTap, label = 'C
     }
     state.scroll[id] = box.scrollLeft;
     updatePin();
-  });
+  };
+  requestAnimationFrame(() => place());
   return h('div', { class: 'chart-wrap' }, pin, box);
 }
 function sparkline(values, { height = 26 } = {}) {

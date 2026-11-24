@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Charts open on the latest months again. Since the weekly summary card, Month waited for it before showing
+  the page, and the chart scrolled to its end before it was on screen, so it opened on the oldest months.
 - BRD sync: dates older than about 90 days are only asked for right after a new link. Outside that window
   BRD answers them with an empty list rather than an error, which had marked months of missing history as
   complete. Health now says which dates are still missing and that a new link is what brings them.

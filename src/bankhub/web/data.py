@@ -433,7 +433,7 @@ def problems(h: dict, now: datetime | None = None) -> list[str]:
 
 def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
     """Is each bank connection alive, how far back is history, and when did backups last run."""
-    from ..sync import BACKFILL_DAYS, WINDOWED, backfill_done
+    from ..sync import BACKFILL_DAYS, RECENT_DAYS, WINDOWED, backfill_done
     target = (date.today() - timedelta(days=BACKFILL_DAYS)).isoformat()
     accounts = []
     for a in conn.execute(
@@ -449,6 +449,9 @@ def health(conn: sqlite3.Connection, data_dir: Path) -> dict:
                          "last_ok": a["last_ok"] or a["last_request"], "oldest": a["oldest"],
                          # Banks fetched in windows fill in their history over several syncs.
                          "backfilling": a["institution"] in WINDOWED and not backfill_done(a),
+                         # Too old for unattended access: only a new link brings it (see sync._sync_windowed).
+                         "needs_new_link": a["institution"] in WINDOWED and not backfill_done(a) and bool(a["backfill_until"])
+                                           and a["backfill_until"] < (date.today() - timedelta(days=RECENT_DAYS)).isoformat(),
                          # Older history is fetched going forward from backfill_from: complete up to backfill_until.
                          "backfill": {"from": a["backfill_from"], "until": a["backfill_until"], "to": a["history_from"],
                                       "recent_pending": a["recent_cursor"]},

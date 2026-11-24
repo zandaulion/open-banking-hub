@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- BRD sync: dates older than about 90 days are only asked for right after a new link. Outside that window
+  BRD answers them with an empty list rather than an error, which had marked months of missing history as
+  complete. Health now says which dates are still missing and that a new link is what brings them.
 - Accounts and Settings are apart. Accounts shows what you have: balances, net worth, credit cards and the
   groups' balances, with one line saying whether every bank is up to date. Settings (⚙ on Accounts, or the
   last item in the laptop sidebar) has the banks with their health, Sync now and linking, adding statements

@@ -320,7 +320,13 @@ def _sync_windowed(conn, eb, account, cap, backfill, last) -> tuple[int, int]:
             conn.execute("UPDATE accounts SET recent_until=?, recent_cursor=NULL WHERE id=?", (today.isoformat(), acc_id))
 
     def older():
+        # Without a fresh consent BRD answers dates older than about 90 days with an empty list, not an error,
+        # which would read as "no payments" and mark real history as done. Older dates are only asked for right
+        # after a new link; otherwise just what unattended access can see.
         until, history = date.fromisoformat(state()["backfill_until"]), date.fromisoformat(state()["history_from"])
+        reach = today - timedelta(days=RECENT_DAYS)
+        if not backfill and until < reach:
+            return
         if until < history and budget[0] > 0:
             fetch_forward(eb, account["uid"], until, history - timedelta(days=1), cap, budget, save("backfill_until", False))
 

@@ -136,10 +136,16 @@ def test_windowed_bank_fetches_history_over_several_syncs(conn, key_path):
     asked.clear()
     sync.sync_account(conn, eb, acc(), backfill=False, force=True)
     assert asked[0] >= (today - td(days=sync.RECENT_DAYS)).isoformat()    # afterwards, recent days first
+    # Ordinary syncs never ask for dates the bank only answers right after a consent (it would send nothing).
+    asked.clear()
+    for _ in range(5):
+        sync.sync_account(conn, eb, acc(), backfill=False, force=True)
+    assert min(asked) >= (today - td(days=sync.RECENT_DAYS)).isoformat() and not sync.backfill_done(acc())
+    # Each new link fetches more of the older history, until it is all there.
     for _ in range(30):
         if sync.backfill_done(acc()):
             break
-        sync.sync_account(conn, eb, acc(), backfill=False, force=True)
+        sync.sync_account(conn, eb, acc(), backfill=True)
     assert count() == 240 and sync.backfill_done(acc())
 
 

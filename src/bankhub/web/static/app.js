@@ -1188,6 +1188,7 @@ function healthCard(hd) {
     const bf = a.backfill || {};
     if (a.backfilling) row.append(h('div', { class: 'row-sub' }, h('span', {},
       bf.recent_pending ? `Fetching recent payments: done up to ${dayLabel(bf.recent_pending)}`
+      : a.needs_new_link ? `Not fetched: ${dayLabel(bf.until)} to ${dayLabel(bf.to)} (statements may cover part). ${a.institution} sends dates this old only right after a new link.`
       : bf.until && bf.to ? `Filling in older history: ${dayLabel(bf.from)} to ${dayLabel(bf.until)} done, until ${dayLabel(bf.to)}`
       : 'Older history starts at the next sync')));
     return row;

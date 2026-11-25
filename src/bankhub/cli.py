@@ -377,6 +377,13 @@ def mcp():
     main()
 
 
+@app.command("mcp-http")
+def mcp_http():
+    """Run the MCP server for Claude's custom connectors, on loopback behind your HTTPS proxy (OAuth; see docs/DEPLOY.md)."""
+    from .mcp_remote import serve
+    serve()
+
+
 @app.command()
 def web():
     """Run the owner's PWA (app + admin listeners on loopback)."""

@@ -100,7 +100,7 @@ def test_mcp_tools_answer_from_clean_layer(conn, rules, tmp_path):
     server = build_server(tmp_path / "bankhub.db")
     tools = {t.name for t in asyncio.run(server.list_tools())}
     assert tools == {"get_sync_status", "get_balances", "query_transactions", "get_spending_summary",
-                     "get_recurring_payments"}
+                     "get_recurring_payments", "get_net_worth", "compare_periods", "get_credit_cards", "get_week_summary"}
     result = asyncio.run(server.call_tool("query_transactions", {"date_from": "2026-10-01"}))
     text = json.dumps([getattr(c, "text", "") for c in result.content])
     assert "Lidl" in text and "individual" in text

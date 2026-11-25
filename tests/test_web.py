@@ -375,3 +375,27 @@ def test_problems_name_a_silent_bank_old_backups_and_an_old_card_statement(cfg):
     assert isinstance(app.get("/api/status").json()["problems"], list)
     d = app.get("/api/accounts").json()
     assert d["version"] and "problems" in d
+
+
+def test_assistant_settings_switch_pair_and_disconnect(cfg):
+    from bankhub import mcp_auth
+    app = _device(cfg)
+    assert app.get("/api/assistant").json()["url"] is None           # not set up: the card says so
+    cfg.mcp_url = "https://ai.example.org"
+    app = _device(cfg)
+    st = app.get("/api/assistant").json()
+    assert st == {"enabled": False, "url": "https://ai.example.org/mcp", "clients": [], "calls": []}
+    assert app.post("/api/assistant/pairing", headers=H).status_code == 409
+    assert app.post("/api/assistant", json={"enabled": True}).status_code == 403     # the header is required
+    assert app.post("/api/assistant", json={"enabled": True}, headers=H).json()["enabled"] is True
+    code = app.post("/api/assistant/pairing", headers=H).json()["code"]
+    assert len(code) == 9 and code[4] == "-"
+    # A client registered by the endpoint shows up here, and can be disconnected.
+    store = mcp_auth.Store(cfg.core.data_dir / "web.db")
+    with store._conn() as c:
+        c.execute("INSERT INTO mcp_clients(client_id, info, created_at) VALUES ('c1', '{\"client_name\": \"Claude\"}', 1)")
+    store.log("c1", "get_net_worth")
+    st = app.get("/api/assistant").json()
+    assert st["clients"][0]["name"] == "Claude" and st["calls"][0]["tool"] == "get_net_worth"
+    assert app.post("/api/assistant/clients/c1/disconnect", headers=H).json()["clients"] == []
+    assert app.post("/api/assistant/clients/c1/disconnect", headers=H).status_code == 404

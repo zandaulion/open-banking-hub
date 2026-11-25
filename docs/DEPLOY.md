@@ -58,6 +58,50 @@ PUBLIC_BASE_URL=https://<private host>/bank
 The cookie is scoped to `/bank` automatically (from `PUBLIC_BASE_URL`). With SELinux, Caddy may
 need the port labelled: `semanage port -a -t http_port_t -p tcp 8041`.
 
+## Optional: AI on your phone
+
+Claude's custom connectors are called from Anthropic's servers, not from your phone, so a private
+network cannot reach them. `bankhub mcp-http` is a separate, small endpoint for this: it serves only
+the read-only, redacted MCP tools (the same ones as `bankhub mcp`), never the app, and only to a client
+you approved with a one-time code from the app.
+
+How it is protected:
+
+- **Off until you turn it on**, in Settings → AI assistant. Turning it off stops every token at once.
+- **OAuth 2.1 with PKCE.** Clients register themselves, but only with Claude's own callback addresses
+  (`BANKHUB_MCP_REDIRECTS` adds others). Approving needs a pairing code from the app: eight characters,
+  valid once for ten minutes, and five wrong tries void the request.
+- **Short-lived tokens**, stored only as hashes: one hour for access, thirty days for refresh, rotated
+  on every use. Settings lists connected clients (Disconnect removes one) and the last tools called.
+- **Redacted data only.** It opens `bankhub.db` read-only and reads the redacted tables: no names of
+  people, IBANs, card numbers or payment descriptions. Check with `bankhub inspect-redaction --samples 0`.
+
+Setting it up:
+
+1. Pick a public hostname for the endpoint alone, for example `bank-mcp.example.com`, and put it in the
+   data directory's `.env`:
+
+   ```
+   BANKHUB_MCP_URL=https://bank-mcp.example.com
+   # BANKHUB_MCP_PORT=8241
+   ```
+
+2. Run it: copy [`deploy/bankhub-mcp.service`](../deploy/bankhub-mcp.service) to
+   `~/.config/systemd/user/`, fix the paths, then `systemctl --user enable --now bankhub-mcp.service`.
+   It listens on `127.0.0.1` only.
+3. Publish **only this port** at that hostname over HTTPS: a Cloudflare Tunnel, or a reverse proxy
+   with a certificate. Keep the app and the admin API private as before. If the proxy is on the same
+   machine, the endpoint trusts `Cf-Connecting-Ip` only from loopback.
+4. In Bank Hub: Settings → AI assistant → *Allow connections*.
+5. In Claude (web or the app): Settings → Connectors → *Add custom connector*, with the address the
+   card shows (`https://bank-mcp.example.com/mcp`). Press *Connect*; a Bank Hub page asks for a code.
+   Get it from Settings → AI assistant → *Get a pairing code*, type it, and Claude is connected. The
+   connector then works from the Claude app on your phone.
+
+Optional: `BANKHUB_MCP_ALLOWED_NETS` (comma-separated networks) limits who can call `/mcp` and `/token`
+to those networks; the approval page stays reachable for your browser. Only set it after checking in the
+proxy's log where Claude's calls really come from.
+
 ## Optional: admin API for an external console
 
 Invitations and devices are managed with `bankhub invite` and `bankhub devices`. If you run a

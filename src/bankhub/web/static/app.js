@@ -1085,6 +1085,69 @@ function b64ToBytes(b64) {
   const s = atob((b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from(s, (c) => c.charCodeAt(0));
 }
+function assistantCard() {
+  const card = h('section', { class: 'card' }, h('h2', {}, 'AI assistant'), h('p', { class: 'muted' }, 'Loading…'));
+  const when = (t) => new Date(t * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const draw = async (st) => {
+    st = st || await api('assistant');
+    const msg = h('p', { class: 'muted', role: 'status', style: 'margin:8px 0 0' });
+    const intro = h('p', { class: 'faint', style: 'margin:-4px 0 10px;font-size:13px' },
+      'Let Claude answer questions about your spending, from the Claude app on your phone. It gets read-only, redacted figures: no names of people, no account numbers, and it can never move money.');
+    if (!st.url) {
+      card.replaceChildren(card.firstChild, intro, h('p', { class: 'muted', style: 'margin:0' }, 'Not set up on this server yet. See "AI on your phone" in the deployment guide.'));
+      return;
+    }
+    const sw = h('input', { type: 'checkbox', checked: st.enabled, disabled: !!state.offline });
+    sw.addEventListener('change', async () => {
+      sw.disabled = true;
+      try { draw(await api('assistant', { method: 'POST', body: { enabled: sw.checked } })); }
+      catch (e) { msg.textContent = e.message; sw.disabled = false; sw.checked = !sw.checked; }
+    });
+    const parts = [card.firstChild, intro, h('label', { class: 'toggle' }, sw, 'Allow connections')];
+    if (st.enabled) {
+      const codeBox = h('div');
+      const pair = h('button', { class: 'btn primary', disabled: !!state.offline }, 'Get a pairing code');
+      pair.addEventListener('click', async () => {
+        pair.disabled = true;
+        try {
+          const r = await api('assistant/pairing', { method: 'POST' });
+          codeBox.replaceChildren(h('p', { class: 'muted', style: 'margin:10px 0 4px' }, 'When Claude opens the Bank Hub page, type this code. It works once, for ten minutes:'),
+            h('p', { class: 'num pairing-code' }, r.code));
+        } catch (e) { msg.textContent = e.message; }
+        pair.disabled = false;
+      });
+      const copy = h('button', { class: 'btn' }, 'Copy address');
+      copy.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(st.url); copy.textContent = 'Copied'; } catch { msg.textContent = st.url; }
+      });
+      parts.push(h('p', { class: 'muted', style: 'margin:10px 0 4px' }, 'In Claude, add a custom connector with this address, then press Connect there:'),
+        h('p', { class: 'num', style: 'word-break:break-all;margin:0 0 8px' }, st.url),
+        h('div', { class: 'chips' }, copy, pair), codeBox);
+    }
+    if (st.clients.length) {
+      parts.push(h('h3', {}, 'Connected'), h('ul', { class: 'rows' }, st.clients.map((c) => {
+        const off = h('button', { class: 'btn' }, 'Disconnect');
+        off.addEventListener('click', async () => {
+          off.disabled = true;
+          try { draw(await api(`assistant/clients/${encodeURIComponent(c.client_id)}/disconnect`, { method: 'POST' })); }
+          catch (e) { msg.textContent = e.message; off.disabled = false; }
+        });
+        return h('li', {}, h('div', { class: 'row-head' }, h('span', { class: 'name' }, c.name), off),
+          h('div', { class: 'row-sub' }, h('span', {}, c.connected ? 'signed in' : 'signed out'),
+            h('span', {}, c.last_used ? `last used ${when(c.last_used)}` : `added ${when(c.created_at)}`)));
+      })));
+    }
+    if (st.calls.length) {
+      parts.push(h('h3', {}, 'Recent questions'), h('ul', { class: 'rows compact' }, st.calls.map((c) =>
+        h('li', {}, h('div', { class: 'row-head' }, h('span', {}, c.tool.replaceAll('_', ' ')), h('span', { class: 'faint' }, when(c.at)))))));
+    }
+    parts.push(msg);
+    card.replaceChildren(...parts);
+  };
+  draw().catch((e) => card.replaceChildren(card.firstChild, h('p', { class: 'muted' }, e.message)));
+  return card;
+}
+
 function alertsCard() {
   const card = h('section', { class: 'card' }, h('h2', {}, 'Notifications'), h('p', { class: 'muted' }, 'Loading…'));
   const draw = async () => {
@@ -1640,7 +1703,7 @@ async function renderSettings(params) {
   const about = h('section', { class: 'card' }, h('h2', {}, 'About'),
     h('p', { class: 'muted', style: 'margin:0' }, `Bank Hub ${d.version}. Updates install themselves the next time the app is opened.`),
     h('p', { class: 'faint', style: 'margin:6px 0 0;font-size:13px' }, 'Read-only: it can see your accounts, never move money.'));
-  const columns = [[banks, healthCard(d.health), link], [statementCard, groupsCard, categories], [alertsCard(), yourData, about]];
+  const columns = [[banks, healthCard(d.health), link], [statementCard, groupsCard, categories], [alertsCard(), assistantCard(), yourData, about]];
   view.replaceChildren(...(wide.matches ? columns.map((c) => h('div', { class: 'col' }, ...c)) : columns.flat()));
 }
 

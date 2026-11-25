@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- AI on your phone: `bankhub mcp-http` serves the read-only, redacted MCP tools to Claude's custom
+  connectors, so the Claude app can answer questions about your spending. OAuth 2.1 with PKCE; only
+  Claude's callback addresses can register; you approve with a one-time pairing code from the new
+  Settings → AI assistant card, which also turns the endpoint on and off, lists connected clients with
+  Disconnect, and shows the last tools called. Tokens are hashed, last an hour (refresh: thirty days,
+  rotated on every use) and stop at once when it is turned off. Published on its own hostname; the app
+  stays private. See docs/DEPLOY.md.
+- New MCP tools: `get_net_worth`, `compare_periods` (two periods by category), `get_credit_cards` and
+  `get_week_summary`, all redacted.
 - Charts open on the latest months again. Since the weekly summary card, Month waited for it before showing
   the page, and the chart scrolled to its end before it was on screen, so it opened on the oldest months.
 - BRD sync: dates older than about 90 days are only asked for right after a new link. Outside that window

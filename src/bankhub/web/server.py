@@ -33,7 +33,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from .. import fx, ledger, sync
+from .. import fx, ledger, mcp_auth, sync
 from ..config import Config, _read_env_file, load_config
 from ..db import connect, connect_readonly, transaction, utcnow
 from .. import statements
@@ -68,6 +68,7 @@ class WebConfig:
     admin_port: int
     bind: str = "127.0.0.1"   # 0.0.0.0 only inside a container whose port is published to loopback
     background: bool = False  # the running server's own jobs (the weekly summary); off for tests
+    mcp_url: str | None = None  # the public AI-assistant endpoint (`bankhub mcp-http`), if one is set up
 
     @property
     def callback_url(self) -> str:
@@ -83,7 +84,8 @@ def load_web_config(core: Config | None = None) -> WebConfig:
                      # The cookie is scoped to the app's own path (e.g. /bank) unless set explicitly.
                      cookie_path=env.get("COOKIE_PATH") or (urlsplit(env.get("PUBLIC_BASE_URL", "")).path.rstrip("/") or "/"),
                      port=int(env.get("WEB_PORT", "8041")), admin_port=int(env.get("ADMIN_PORT", "8141")),
-                     bind=env.get("BANKHUB_BIND", "127.0.0.1"))
+                     bind=env.get("BANKHUB_BIND", "127.0.0.1"),
+                     mcp_url=(env.get("BANKHUB_MCP_URL") or "").rstrip("/") or None)
 
 
 try:
@@ -136,6 +138,10 @@ class Recategorize(BaseModel):
 class PushSubscription(BaseModel):
     endpoint: str
     keys: dict
+
+
+class AssistantSwitch(BaseModel):
+    enabled: bool
 
 
 class AlertSettings(BaseModel):
@@ -208,6 +214,7 @@ def create_app(cfg: WebConfig) -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=800)
     auth = AuthStore(cfg.core.data_dir / "web.db")
     alerts = Alerts(cfg.core.data_dir / "web.db", cfg.core.data_dir)
+    assistant = mcp_auth.Store(cfg.core.data_dir / "web.db")
     if cfg.background:
         def weekly_loop():
             # Checks every five minutes whether the weekly summary is due; sending is logged, so it goes once.
@@ -364,6 +371,33 @@ def create_app(cfg: WebConfig) -> FastAPI:
         if not alerts.test(dev["id"]):
             raise HTTPException(400, "This device is not subscribed, or the push service refused the message.")
         return {"ok": True}
+
+    # --- the AI assistant (the remote MCP endpoint, which runs as its own process) -----------
+
+    def assistant_state() -> dict:
+        return {"enabled": assistant.enabled(), "url": f"{cfg.mcp_url}/mcp" if cfg.mcp_url else None,
+                "clients": assistant.clients(), "calls": assistant.recent_calls(20)}
+
+    @app.get("/api/assistant")
+    def assistant_status(dev: dict = Depends(device)):
+        return assistant_state()
+
+    @app.post("/api/assistant")
+    def assistant_switch(body: AssistantSwitch, dev: dict = Depends(device)):
+        assistant.set_enabled(body.enabled)
+        return assistant_state()
+
+    @app.post("/api/assistant/pairing")
+    def assistant_pairing(dev: dict = Depends(device)):
+        if not assistant.enabled():
+            raise HTTPException(409, "Turn the connection on first.")
+        return assistant.new_pairing_code()
+
+    @app.post("/api/assistant/clients/{client_id}/disconnect")
+    def assistant_disconnect(client_id: str, dev: dict = Depends(device)):
+        if not assistant.disconnect(client_id):
+            raise HTTPException(404, "No such connection.")
+        return assistant_state()
 
     @app.post("/api/accounts/{alias}/name")
     def rename(alias: str, body: AccountName, dev: dict = Depends(device)):

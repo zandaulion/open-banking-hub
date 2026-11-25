@@ -18,6 +18,9 @@ README alone, and never expose the app to the public internet.
   hostnames, email addresses, keys and home paths: never weaken it to make a commit pass.
 - The privacy boundary is `transactions_clean` (`ledger.CLEAN_COLUMNS`) and `bankhub.queries`: the MCP
   server reads nothing else. Never add names, IBANs or descriptions there.
+- `bankhub mcp-http` (`mcp_remote.py`, `mcp_auth.py`) is the only part meant to face the internet. It
+  serves the same redacted tools and nothing else; keep it read-only, behind OAuth and the owner's
+  pairing code, and never mount the app's routes on it.
 - Bank transfers are matched on the counterparty name only, never on free-text descriptions.
 - There is no payment code path, and there must never be one.
 - Amounts are integer minor units in the raw layer; reports use RON at the BNR rate.

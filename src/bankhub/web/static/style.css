@@ -310,3 +310,8 @@ main#view { touch-action: pan-y; will-change: transform; }
   main { max-width: 1440px; }
   main#view { column-count: 3; }
 }
+
+/* AI assistant card */
+.card h3 { font-size: 13px; font-weight: 600; color: var(--text-muted); margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .04em; }
+.rows.compact li { padding: 6px 0; }
+.pairing-code { font-size: 28px; letter-spacing: .12em; margin: 0; font-weight: 600; }

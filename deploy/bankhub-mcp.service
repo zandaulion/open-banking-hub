@@ -1,0 +1,18 @@
+# Copy to ~/.config/systemd/user/ and replace /path/to/personal-bank-hub.
+# Needs BANKHUB_MCP_URL in the data directory's .env (see docs/DEPLOY.md, "AI on your phone").
+[Unit]
+Description=Bank Hub AI assistant endpoint (read-only, redacted MCP over OAuth; loopback only)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/personal-bank-hub
+ExecStart=/path/to/personal-bank-hub/.venv/bin/bankhub mcp-http
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

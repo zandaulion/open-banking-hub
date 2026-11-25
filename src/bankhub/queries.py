@@ -137,7 +137,10 @@ def spending_summary(conn: sqlite3.Connection, *, date_from: str, date_to: str, 
     excluded = conn.execute(
         "SELECT count(*), round(sum(abs(amount_ron)), 2) FROM transactions_clean"
         " WHERE booking_date BETWEEN ? AND ? AND is_internal_transfer = 1", args).fetchone()
-    regular_income = conn.execute("SELECT 1 FROM recurring_series WHERE direction = 'in' LIMIT 1").fetchone() is not None
+    # A salary is known from a regular series, or from a payroll credit the bank labels as such.
+    regular_income = conn.execute(
+        "SELECT 1 FROM recurring_series WHERE direction = 'in' UNION ALL"
+        " SELECT 1 FROM transactions_clean WHERE kind = 'income' AND subcategory = 'salary' LIMIT 1").fetchone() is not None
     return {"date_from": date_from, "date_to": date_to, "group_by": group_by, "groups": groups,
             "total_outflow_ron": spent, "income_ron": income, "other_money_in_ron": other_in,
             "total_inflow_ron": round(income + other_in, 2),
@@ -310,3 +313,76 @@ def net_worth_history(conn: sqlite3.Connection, *, months: int = 24, today: date
     points = [{"month": m, "net_worth_ron": round(series[m], 2), "cards_ron": round(cards_by_month[m], 2),
                "partial": m == end_month} for m in span if m >= start]
     return {"months": points, "from": points[0]["month"] if points else None, "fx_basis": "BNR official rate"}
+
+
+def credit_cards(conn: sqlite3.Connection) -> dict:
+    """Cards added from statements: what the latest statement says. Instalment plans are counted and summed,
+    never named (their merchant names stay in the owner's app)."""
+    out = []
+    for a in conn.execute("SELECT id, alias FROM accounts WHERE source = 'statement' AND active = 1 ORDER BY alias"):
+        s = conn.execute("SELECT * FROM card_statements WHERE account_id = ? ORDER BY period_end DESC LIMIT 1",
+                         (a["id"],)).fetchone()
+        if not s:
+            continue
+        plans = conn.execute("SELECT count(*), sum(installment_minor), sum(remaining_minor) FROM card_plans WHERE statement_id = ?",
+                             (s["id"],)).fetchone()
+        ron = lambda v: None if v is None else round(v / 100, 2)
+        out.append({"account": a["alias"], "statement_period": [s["period_start"], s["period_end"]],
+                    "owed_ron": ron(s["owed_minor"]), "credit_limit_ron": ron(s["limit_minor"]),
+                    "available_ron": ron(s["available_minor"]), "due_date": s["due_date"],
+                    "minimum_due_ron": ron(s["min_due_minor"]), "total_due_ron": ron(s["total_due_minor"]),
+                    "instalment_plans": plans[0], "instalments_this_month_ron": ron(plans[1]),
+                    "instalments_remaining_ron": ron(plans[2])})
+    return {"cards": out, "note": "Owed on a card is not part of the balances total."}
+
+
+def compare_periods(conn: sqlite3.Connection, *, a_from: str, a_to: str, b_from: str, b_to: str,
+                    group_by: str = "category") -> dict:
+    """Spending in period B against period A, per group, biggest changes first."""
+    a = spending_summary(conn, date_from=a_from, date_to=a_to, group_by=group_by)
+    b = spending_summary(conn, date_from=b_from, date_to=b_to, group_by=group_by)
+    key = lambda g: g["name"]
+    av = {key(g): g["outflow_ron"] for g in a["groups"]}
+    bv = {key(g): g["outflow_ron"] for g in b["groups"]}
+    rows = [{group_by: k, "a_ron": round(av.get(k, 0.0), 2), "b_ron": round(bv.get(k, 0.0), 2),
+             "change_ron": round(bv.get(k, 0.0) - av.get(k, 0.0), 2), "change_pct": _change(bv.get(k), av.get(k))}
+            for k in set(av) | set(bv)]
+    rows.sort(key=lambda r: -abs(r["change_ron"]))
+    return {"a": {"from": a_from, "to": a_to, "spent_ron": a["total_outflow_ron"], "income_ron": a["income_ron"]},
+            "b": {"from": b_from, "to": b_to, "spent_ron": b["total_outflow_ron"], "income_ron": b["income_ron"]},
+            "groups": rows}
+
+
+def week_summary(conn: sqlite3.Connection, *, today: date | None = None) -> dict:
+    """The last seven full days against the usual week (median of the eight before), on day-to-day spending:
+    regular payments are shown apart, and cards added from statements (whose purchases arrive once a month)
+    are left out. Categories well above their usual week, and regular payments due in the next seven days."""
+    from statistics import median
+    today = today or date.today()
+    end = today - timedelta(days=1)
+    start = end - timedelta(days=6)
+    synced = "account_alias NOT IN (SELECT alias FROM accounts WHERE source = 'statement')"
+
+    def spent(a: date, b: date, extra: str = "") -> float:
+        return round(-(conn.execute(f"""SELECT coalesce(sum(amount_ron), 0) FROM transactions_clean
+            WHERE status = 'booked' AND kind IN ('spending', 'refund') AND {synced} AND booking_date BETWEEN ? AND ? {extra}""",
+            (a.isoformat(), b.isoformat())).fetchone()[0] or 0), 2)
+
+    weeks = [(start - timedelta(days=7 * i), end - timedelta(days=7 * i)) for i in range(1, 9)]
+    daily = spent(start, end, "AND is_recurring = 0")
+    history = [h for h in (spent(a, b, "AND is_recurring = 0") for a, b in weeks) if h > 0]
+    usual = round(median(history), 2) if len(history) >= 3 else None
+    by_cat: dict[str, list[float]] = {}
+    for cat, day, amount in conn.execute(f"""SELECT category, booking_date, amount_ron FROM transactions_clean
+            WHERE status = 'booked' AND kind IN ('spending', 'refund') AND is_recurring = 0 AND {synced}
+            AND booking_date BETWEEN ? AND ?""", (weeks[-1][0].isoformat(), end.isoformat())):
+        by_cat.setdefault(cat, [0.0] * 9)[(end - date.fromisoformat(day)).days // 7] -= amount or 0
+    up = sorted(({"category": c, "spent_ron": round(w[0], 2), "usual_ron": round(median(w[1:]), 2)}
+                 for c, w in by_cat.items() if w[0] >= 100 and w[0] >= 1.5 * median(w[1:]) + 50),
+                key=lambda x: x["usual_ron"] - x["spent_ron"])
+    due = _rows(conn.execute("""SELECT merchant, next_expected, last_amount, currency FROM recurring_series
+        WHERE direction = 'out' AND status = 'active' AND next_expected BETWEEN ? AND ? ORDER BY next_expected""",
+        (today.isoformat(), (today + timedelta(days=6)).isoformat())))
+    return {"from": start.isoformat(), "to": end.isoformat(), "spent_ron": spent(start, end), "day_to_day_ron": daily,
+            "usual_day_to_day_ron": usual, "change_pct": _change(daily, usual), "categories_above_usual": up[:5],
+            "due_next_7_days": due}

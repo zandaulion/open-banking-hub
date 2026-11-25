@@ -210,9 +210,13 @@ claude mcp add bankhub -- /path/to/open-banking-hub/.venv/bin/bankhub mcp
 ```
 
 Tools: `get_sync_status`, `get_balances`, `query_transactions`, `get_spending_summary`,
-`get_recurring_payments`. Ready-made prompts: *Monthly review*, *Subscription audit*, *Unusual spending*,
+`get_recurring_payments`, `get_net_worth`, `compare_periods`, `get_credit_cards`, `get_week_summary`. Ready-made prompts: *Monthly review*, *Subscription audit*, *Unusual spending*,
 *Savings ideas*. The server opens the database read-only and reads only the redacted
 tables. Check what an assistant can see with `bankhub inspect-redaction --samples 0`.
+
+From the Claude app on your phone: `bankhub mcp-http` serves the same tools as a custom connector, with
+OAuth and a one-time pairing code from Settings → AI assistant. It is the one part you publish, on its
+own hostname; see [docs/DEPLOY.md](docs/DEPLOY.md#optional-ai-on-your-phone).
 
 ### Your own rules
 

@@ -17,6 +17,7 @@ within a few days, and a fix or mitigation plan as soon as one exists.
 ## Scope
 
 - The web app and its API: device registration, invitations, cookies, the bank-linking callback.
+- The AI assistant endpoint (`bankhub mcp-http`): its OAuth flow, pairing codes and tokens.
 - The privacy boundary: anything that lets an MCP client (an AI assistant) see names, IBANs, card
   numbers or payment descriptions.
 - Data handling: sync, storage, rules files, backups and the off-site script.
@@ -26,6 +27,9 @@ Out of scope: Enable Banking, the banks, Tailscale, reverse proxies and the oper
 ## What operators should know
 
 - The app is meant for a private network only. Do not publish it on the internet.
+- The AI assistant endpoint is the one part meant to be public, because Claude's connectors call it from
+  Anthropic's servers. It serves only the redacted, read-only tools, is off until turned on in Settings,
+  and accepts only clients approved with a one-time pairing code. Publish its port alone, never the app's.
 - It can only read accounts (PSD2 AISP); it contains no payment code.
 - Data at rest (SQLite, backups) is not encrypted by the application. Protect the data directory at the
   operating-system level; the off-site backup script encrypts with restic.
